@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { sendText, sendTemplate } from "@/lib/flaxxa";
 import { connectDB }              from "@/lib/mongodb";
 import Message                    from "@/models/Message";

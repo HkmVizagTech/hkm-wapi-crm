@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { uploadMedia } from "@/lib/cloudinary";
 import { connectDB }   from "@/lib/mongodb";
 import Media           from "@/models/Media";

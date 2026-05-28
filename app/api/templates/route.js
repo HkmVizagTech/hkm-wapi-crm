@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { getTemplates } from "@/lib/flaxxa";
 import { NextResponse }  from "next/server";
 

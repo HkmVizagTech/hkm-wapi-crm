@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { connectDB }    from "@/lib/mongodb";
 import Campaign         from "@/models/Campaign";
 import { getQueue }     from "@/lib/queue/bulkSendQueue";
