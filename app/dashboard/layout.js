@@ -5,6 +5,7 @@ import { useState, useEffect }      from "react";
 
 const NAV = [
   {href:"/dashboard",           icon:"📊",label:"Dashboard"},
+  {href:"/dashboard/inbox",         icon:"💬",label:"Inbox"},
   {href:"/dashboard/bulk",      icon:"📤",label:"Bulk Send"},
   {href:"/dashboard/contacts",  icon:"👥",label:"Contacts"},
   {href:"/dashboard/templates", icon:"📋",label:"Templates"},
