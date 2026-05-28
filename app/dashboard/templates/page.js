@@ -1,6 +1,7 @@
 "use client";
 import { useState }  from "react";
 import { TEMPLATES } from "@/lib/utils";
+import Link          from "next/link";
 
 const C={g1:"#25d366",teal:"#00c9d4",blue:"#2979ff",amber:"#ffb300",red:"#f44336",purple:"#9c27b0",
   card:"#111827",surf:"#0d1117",border:"#1c2a3f",tx:"#e8edf5",txs:"#8899b0",txd:"#445566"};
@@ -17,11 +18,18 @@ export default function Templates() {
 
   return (
     <div style={{padding:24}}>
-      <div style={{marginBottom:20}}>
-        <h1 style={{fontSize:20,fontWeight:800}}>📋 Templates</h1>
-        <p style={{fontSize:13,color:C.txs,marginTop:2}}>
-          {TEMPLATES.filter(t=>t.status==="APPROVED").length} approved · {TEMPLATES.length} total
-        </p>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:800}}>📋 Templates</h1>
+          <p style={{fontSize:13,color:C.txs,marginTop:2}}>
+            {TEMPLATES.filter(t=>t.status==="APPROVED").length} approved · {TEMPLATES.length} total
+          </p>
+        </div>
+        <Link href="/dashboard/templates/create" style={{
+          padding:"9px 18px",borderRadius:9,textDecoration:"none",fontWeight:700,fontSize:13,
+          background:"linear-gradient(135deg,#25d366,#1aad52)",color:"#000"}}>
+          + Create Template
+        </Link>
       </div>
       <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
         <input style={{flex:1,minWidth:200,background:C.surf,border:`1px solid ${C.border}`,
