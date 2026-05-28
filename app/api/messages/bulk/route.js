@@ -1,6 +1,6 @@
 import { connectDB }    from "@/lib/mongodb";
 import Campaign         from "@/models/Campaign";
-import bulkSendQueue    from "@/lib/queue/bulkSendQueue";
+import { getQueue }     from "@/lib/queue/bulkSendQueue";
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
@@ -11,17 +11,18 @@ export async function POST(req) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // Create campaign document
   const campaign = await Campaign.create({
     name: name || `Campaign ${new Date().toLocaleDateString()}`,
     templateName, templateLang, mediaUrl,
     totalContacts: contacts.length,
     delay,
-    results: contacts.map(c => ({ phone: c.phone, name: c.name, params: c.params, status: "pending" })),
+    results: contacts.map(c => ({
+      phone: c.phone, name: c.name, params: c.params, status: "pending"
+    })),
   });
 
-  // Queue the job
-  await bulkSendQueue.add({
+  const queue = getQueue();
+  await queue.add({
     campaignId:   campaign._id.toString(),
     contacts,
     templateName,
