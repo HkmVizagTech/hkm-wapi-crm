@@ -1,16 +1,14 @@
 export const dynamic = "force-dynamic";
-
-import { connectDB } from "@/lib/mongodb";
-import Message       from "@/models/Message";
 import { NextResponse } from "next/server";
-
+import { connectDB }    from "@/lib/mongodb";
+import Message          from "@/models/Message";
 export async function GET() {
   await connectDB();
-  const [total, delivered, failed, read] = await Promise.all([
+  const [total,delivered,read,failed] = await Promise.all([
     Message.countDocuments(),
-    Message.countDocuments({ status:"delivered" }),
-    Message.countDocuments({ status:"failed" }),
-    Message.countDocuments({ status:"read" }),
+    Message.countDocuments({status:"delivered"}),
+    Message.countDocuments({status:"read"}),
+    Message.countDocuments({status:"failed"}),
   ]);
-  return NextResponse.json({ total, delivered, failed, read });
+  return NextResponse.json({ total, delivered, read, failed });
 }

@@ -1,13 +1,7 @@
 export const dynamic = "force-dynamic";
-
-import { getTemplates } from "@/lib/flaxxa";
 import { NextResponse }  from "next/server";
-
+import { getTemplates }  from "@/lib/flaxxa";
 export async function GET() {
-  try {
-    const data = await getTemplates();
-    return NextResponse.json(data);
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+  try { return NextResponse.json(await getTemplates()); }
+  catch(e) { return NextResponse.json({ error:e.message }, { status:500 }); }
 }

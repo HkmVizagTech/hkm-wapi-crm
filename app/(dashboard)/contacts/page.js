@@ -1,196 +1,218 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Button, Input, Modal, Table, PageHeader, Badge, Spinner } from "@/components/ui";
-import { useToast }    from "@/hooks/useToast";
-import { Toast }       from "@/components/ui";
-import { parseCSV, downloadCSV, relativeTime } from "@/lib/utils";
+import { parseCSV, downloadCSV, relTime } from "@/lib/utils";
 
-export default function ContactsPage() {
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [search,  setSearch]    = useState("");
-  const [addOpen, setAddOpen]   = useState(false);
-  const [csvOpen, setCsvOpen]   = useState(false);
-  const [form,    setForm]      = useState({ name:"", phone:"", email:"", tags:"", notes:"" });
-  const [saving,  setSaving]    = useState(false);
-  const [csvRows, setCsvRows]   = useState([]);
-  const [csvErr,  setCsvErr]    = useState("");
-  const [importing, setImporting] = useState(false);
-  const fileRef = useRef();
-  const { toast, showToast, clearToast } = useToast();
+const C={g1:"#25d366",teal:"#00c9d4",blue:"#2979ff",red:"#f44336",amber:"#ffb300",
+  card:"#111827",surf:"#0d1117",border:"#1c2a3f",tx:"#e8edf5",txs:"#8899b0",txd:"#445566"};
+const IS={width:"100%",background:C.surf,border:`1px solid ${C.border}`,borderRadius:10,
+  padding:"10px 13px",color:C.tx,fontSize:13,outline:"none",boxSizing:"border-box"};
+const Btn=({ch,onClick,disabled,style:sx={}})=>(
+  <button onClick={onClick} disabled={disabled} style={{
+    padding:"9px 18px",borderRadius:9,border:"none",fontWeight:700,fontSize:13,
+    background:`linear-gradient(135deg,${C.g1},#1aad52)`,color:"#000",
+    cursor:disabled?"not-allowed":"pointer",opacity:disabled?.4:1,...sx}}>
+    {ch}
+  </button>
+);
+const GBtn=({ch,onClick,sx={}})=>(
+  <button onClick={onClick} style={{padding:"8px 14px",borderRadius:9,fontWeight:700,fontSize:13,
+    background:"transparent",border:`1px solid ${C.border}`,color:C.txs,cursor:"pointer",...sx}}>
+    {ch}
+  </button>
+);
 
-  useEffect(() => { loadContacts(); }, []);
+export default function Contacts() {
+  const [contacts,setContacts]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [addOpen,setAddOpen]=useState(false);
+  const [csvOpen,setCsvOpen]=useState(false);
+  const [form,setForm]=useState({name:"",phone:"",email:"",tags:"",notes:""});
+  const [saving,setSaving]=useState(false);
+  const [csvRows,setCsvRows]=useState([]);
+  const [csvErr,setCsvErr]=useState("");
+  const [importing,setImporting]=useState(false);
+  const [toast,setToast]=useState(null);
+  const fileRef=useRef();
 
-  const loadContacts = async () => {
+  const showToast=(m,t="success")=>{setToast({m,t});setTimeout(()=>setToast(null),3500);};
+
+  const load=async()=>{
     setLoading(true);
-    const res = await fetch("/api/contacts");
-    const d   = await res.json();
-    setContacts(d.contacts || []);
+    const r=await fetch("/api/contacts");
+    const d=await r.json();
+    setContacts(d.contacts||[]);
     setLoading(false);
   };
+  useEffect(()=>{load();},[]);
 
-  const saveContact = async () => {
-    if (!form.name || !form.phone) return;
+  const save=async()=>{
+    if(!form.name||!form.phone)return;
     setSaving(true);
-    const res = await fetch("/api/contacts", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ ...form, tags: form.tags.split(",").map(t=>t.trim()).filter(Boolean) }),
-    });
-    if (res.ok) {
-      showToast("Contact added!"); setAddOpen(false);
-      setForm({ name:"",phone:"",email:"",tags:"",notes:"" });
-      loadContacts();
-    } else {
-      const d = await res.json();
-      showToast(d.error || "Failed", "error");
-    }
+    const r=await fetch("/api/contacts",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({...form,tags:form.tags.split(",").map(t=>t.trim()).filter(Boolean)})});
+    if(r.ok){showToast("Contact added!");setAddOpen(false);setForm({name:"",phone:"",email:"",tags:"",notes:""});load();}
+    else{const d=await r.json();showToast(d.error||"Failed","error");}
     setSaving(false);
   };
 
-  const handleCSVFile = e => {
-    const file = e.target.files[0]; if (!file) return;
-    setCsvErr(""); setCsvRows([]);
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const { headers, rows } = parseCSV(ev.target.result);
-      if (!headers.includes("phone")) { setCsvErr('CSV must have a "phone" column'); return; }
-      if (!rows.length) { setCsvErr("No data rows found"); return; }
-      setCsvRows(rows);
+  const handleFile=e=>{
+    const file=e.target.files[0];if(!file)return;
+    setCsvErr("");setCsvRows([]);
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const{headers,rows}=parseCSV(ev.target.result);
+      if(!headers.includes("phone")){setCsvErr('CSV must have a "phone" column');return;}
+      if(!rows.length){setCsvErr("No data rows found");return;}
+      setCsvRows(rows.filter(r=>r.phone?.trim()));
     };
-    reader.readAsText(file);
-    e.target.value = "";
+    reader.readAsText(file);e.target.value="";
   };
 
-  const importCSV = async () => {
-    if (!csvRows.length) return;
+  const importCSV=async()=>{
+    if(!csvRows.length)return;
     setImporting(true);
-    const contacts = csvRows.map(r => ({
-      phone: r.phone?.trim(),
-      name:  r.name  || r.phone,
-      email: r.email || "",
-      tags:  r.tags  ? r.tags.split(";").map(t=>t.trim()) : [],
-      notes: r.notes || "",
-    })).filter(c => c.phone);
-    const res = await fetch("/api/contacts/import", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ contacts }),
-    });
-    const d = await res.json();
+    const r=await fetch("/api/contacts/import",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contacts:csvRows.map(r=>({phone:r.phone?.trim(),name:r.name||r.phone,
+        email:r.email||"",tags:r.tags?r.tags.split(";").map(t=>t.trim()):[],notes:r.notes||""}))})});
+    const d=await r.json();
     showToast(`${d.inserted} imported, ${d.skipped} skipped`);
-    setCsvOpen(false); setCsvRows([]); loadContacts();
-    setImporting(false);
+    setCsvOpen(false);setCsvRows([]);load();setImporting(false);
   };
 
-  const downloadSample = () => downloadCSV("contacts_sample.csv",
-    ["phone","name","email","tags","notes"],
-    [{ phone:"918977761187", name:"Mukunda", email:"mukunda@example.com", tags:"devotee;vip", notes:"Regular donor" }]
-  );
+  const filtered=contacts.filter(c=>
+    c.name?.toLowerCase().includes(search.toLowerCase())||c.phone?.includes(search));
 
-  const filtered = contacts.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const Modal=({open,onClose,title,children})=>open?(
+    <div style={{position:"fixed",inset:0,zIndex:50,display:"flex",alignItems:"center",
+      justifyContent:"center",padding:16,background:"rgba(0,0,0,.6)"}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,
+        width:"100%",maxWidth:500,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"16px 20px",borderBottom:`1px solid ${C.border}`}}>
+          <span style={{fontWeight:800,fontSize:15}}>{title}</span>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.txs,fontSize:22,cursor:"pointer"}}>×</button>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:20}}>{children}</div>
+      </div>
+    </div>
+  ):null;
 
   return (
-    <div className="p-6 fade-up">
-      <PageHeader
-        title="👥 Contacts"
-        subtitle={`${contacts.length} total contacts`}
-        actions={<>
-          <Button variant="ghost" size="sm" onClick={() => setCsvOpen(true)}>📁 Import CSV</Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>+ Add Contact</Button>
-        </>}
-      />
+    <div style={{padding:24}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:800}}>👥 Contacts</h1>
+          <p style={{fontSize:13,color:C.txs,marginTop:2}}>{contacts.length} total contacts</p>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <GBtn ch="📁 Import CSV" onClick={()=>setCsvOpen(true)}/>
+          <Btn ch="+ Add Contact" onClick={()=>setAddOpen(true)}/>
+        </div>
+      </div>
 
-      <Input placeholder="🔍  Search by name, phone or email…"
-        value={search} onChange={e=>setSearch(e.target.value)} className="mb-4"/>
+      <input style={{...IS,marginBottom:16}} placeholder="🔍  Search by name or phone…"
+        value={search} onChange={e=>setSearch(e.target.value)}/>
 
-      {loading ? (
-        <div className="flex justify-center py-16"><Spinner size={32}/></div>
-      ) : (
-        <Table
-          headers={["Name","Phone","Email","Tags","Messages","Added"]}
-          empty="No contacts yet. Add manually or import CSV."
-          rows={filtered.map(c => [
-            <span className="font-semibold">{c.name}</span>,
-            <span className="font-mono text-xs" style={{ color:"#8899b0" }}>{c.phone}</span>,
-            <span className="text-xs" style={{ color:"#8899b0" }}>{c.email || "—"}</span>,
-            <div className="flex gap-1 flex-wrap">
-              {(c.tags||[]).map(t => <Badge key={t} color="#00c9d4">{t}</Badge>)}
-            </div>,
-            <span className="text-xs font-bold" style={{ color:"#25d366" }}>{c.totalMessagesSent || 0}</span>,
-            <span className="text-xs" style={{ color:"#445566" }}>{relativeTime(c.addedAt)}</span>,
-          ])}
-        />
+      {loading?<p style={{color:C.txd,textAlign:"center",padding:40}}>Loading…</p>:(
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr>{["Name","Phone","Tags","Messages","Added"].map(h=>(
+                <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,
+                  textTransform:"uppercase",letterSpacing:".5px",color:C.txs,
+                  borderBottom:`1px solid ${C.border}`}}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {filtered.length===0?(
+                <tr><td colSpan={5} style={{padding:"40px",textAlign:"center",color:C.txd}}>
+                  No contacts yet. Add manually or import CSV.
+                </td></tr>
+              ):filtered.map(c=>(
+                <tr key={c._id} style={{borderBottom:`1px solid ${C.border}50`}}>
+                  <td style={{padding:"12px 14px",fontWeight:600}}>{c.name}</td>
+                  <td style={{padding:"12px 14px",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:C.txs}}>{c.phone}</td>
+                  <td style={{padding:"12px 14px"}}>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                      {(c.tags||[]).map(t=>(
+                        <span key={t} style={{fontSize:10,padding:"1px 7px",borderRadius:20,fontWeight:700,
+                          background:`${C.teal}18`,color:C.teal}}>{t}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{padding:"12px 14px",fontWeight:800,color:C.g1}}>{c.totalMessagesSent||0}</td>
+                  <td style={{padding:"12px 14px",fontSize:12,color:C.txd}}>{relTime(c.addedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* Add contact modal */}
       <Modal open={addOpen} onClose={()=>setAddOpen(false)} title="Add Contact">
-        <Input label="Name *" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Mukunda Das"/>
-        <Input label="Phone * (with country code)" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="918977761187"/>
-        <Input label="Email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="mukunda@example.com"/>
-        <Input label="Tags (comma-separated)" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})} placeholder="devotee, vip, donor"/>
-        <Input label="Notes" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Any notes…"/>
-        <div className="flex gap-3 mt-4">
-          <Button variant="ghost" onClick={()=>setAddOpen(false)} className="flex-1 justify-center">Cancel</Button>
-          <Button onClick={saveContact} disabled={saving||!form.name||!form.phone} className="flex-1 justify-center">
-            {saving ? <><Spinner size={14} color="#000"/> Saving…</> : "Save Contact"}
-          </Button>
+        {[{l:"Name *",k:"name",p:"Mukunda Das"},{l:"Phone * (with country code)",k:"phone",p:"918977761187"},
+          {l:"Email",k:"email",p:"m@example.com"},{l:"Tags (comma-separated)",k:"tags",p:"devotee, vip, donor"},
+          {l:"Notes",k:"notes",p:"Any notes…"}].map(f=>(
+          <div key={f.k} style={{marginBottom:13}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>{f.l}</label>
+            <input style={IS} placeholder={f.p} value={form[f.k]} onChange={e=>setForm({...form,[f.k]:e.target.value})}/>
+          </div>
+        ))}
+        <div style={{display:"flex",gap:10,marginTop:6}}>
+          <GBtn ch="Cancel" onClick={()=>setAddOpen(false)} sx={{flex:1,justifyContent:"center"}}/>
+          <Btn ch={saving?"Saving…":"Save Contact"} onClick={save} disabled={saving||!form.name||!form.phone}
+            style={{flex:1,justifyContent:"center"}}/>
         </div>
       </Modal>
 
-      {/* CSV import modal */}
-      <Modal open={csvOpen} onClose={()=>setCsvOpen(false)} title="Import Contacts from CSV" width="max-w-2xl">
-        <div className="mb-4 p-4 rounded-xl border" style={{ background:"#0d1117", borderColor:"#1c2a3f" }}>
-          <p className="text-xs font-bold mb-2" style={{ color:"#8899b0" }}>REQUIRED CSV FORMAT</p>
-          <div className="overflow-x-auto">
-            <table className="text-xs w-full">
-              <thead><tr>
-                {["phone *","name","email","tags (;-separated)","notes"].map(h=>(
-                  <th key={h} className="px-3 py-2 text-left font-bold rounded" style={{ background:"rgba(37,211,102,0.1)", color:"#25d366" }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody><tr>
-                {["918977761187","Mukunda","m@ex.com","devotee;vip","Regular donor"].map((v,i)=>(
-                  <td key={i} className="px-3 py-2" style={{ color:"#8899b0" }}>{v}</td>
-                ))}
-              </tr></tbody>
-            </table>
-          </div>
+      <Modal open={csvOpen} onClose={()=>setCsvOpen(false)} title="Import Contacts from CSV">
+        <div style={{background:C.surf,borderRadius:10,padding:14,marginBottom:14,
+          border:`1px solid ${C.border}`}}>
+          <p style={{fontSize:11,fontWeight:700,color:C.txs,marginBottom:8,
+            textTransform:"uppercase",letterSpacing:".5px"}}>CSV Format</p>
+          <code style={{fontSize:12,color:C.g1}}>phone, name, email, tags (;-separated), notes</code>
         </div>
-        <Button variant="teal" className="w-full justify-center mb-4" onClick={downloadSample}>
+        <button onClick={()=>downloadCSV("contacts_sample.csv",
+          ["phone","name","email","tags","notes"],
+          [{phone:"918977761187",name:"Mukunda",email:"m@ex.com",tags:"devotee;vip",notes:"Regular donor"}])}
+          style={{width:"100%",padding:"10px",borderRadius:9,border:"none",
+            background:`linear-gradient(135deg,${C.teal},#0097a7)`,
+            color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:14}}>
           ⬇ Download Sample CSV
-        </Button>
-        <input ref={fileRef} type="file" accept=".csv" onChange={handleCSVFile} className="hidden"/>
-        <div onClick={()=>fileRef.current?.click()} className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors hover:border-[#25d366]/50"
-          style={{ borderColor:"#1c2a3f" }}>
-          <div className="text-3xl mb-2">📁</div>
-          <div className="font-bold text-sm">Tap to upload CSV</div>
-          <div className="text-xs mt-1" style={{ color:"#8899b0" }}>or drag & drop</div>
+        </button>
+        <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} style={{display:"none"}}/>
+        <div onClick={()=>fileRef.current?.click()} style={{
+          border:`2px dashed ${C.border}`,borderRadius:12,padding:"28px 20px",
+          textAlign:"center",cursor:"pointer"}}>
+          <div style={{fontSize:32,marginBottom:8}}>📁</div>
+          <div style={{fontWeight:700,fontSize:14}}>Tap to upload CSV</div>
+          <div style={{fontSize:12,marginTop:4,color:C.txs}}>or drag & drop</div>
         </div>
-        {csvErr && <p className="text-red-400 text-sm mt-3 font-semibold">{csvErr}</p>}
-        {csvRows.length > 0 && (
-          <div className="mt-4 p-3 rounded-xl border" style={{ background:"rgba(37,211,102,0.05)", borderColor:"rgba(37,211,102,0.2)" }}>
-            <p className="text-sm font-bold" style={{ color:"#25d366" }}>✓ {csvRows.length} contacts ready to import</p>
-            <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
-              {csvRows.slice(0,5).map((r,i) => (
-                <div key={i} className="text-xs" style={{ color:"#8899b0" }}>{r.name||r.phone} — {r.phone}</div>
-              ))}
-              {csvRows.length > 5 && <div className="text-xs" style={{ color:"#445566" }}>+{csvRows.length-5} more…</div>}
-            </div>
+        {csvErr&&<p style={{color:C.red,fontSize:13,marginTop:10,fontWeight:600}}>✕ {csvErr}</p>}
+        {csvRows.length>0&&(
+          <div style={{marginTop:12,padding:12,borderRadius:10,
+            background:"rgba(37,211,102,.06)",border:"1px solid rgba(37,211,102,.2)"}}>
+            <p style={{fontSize:13,fontWeight:700,color:C.g1}}>✓ {csvRows.length} contacts ready</p>
           </div>
         )}
-        <div className="flex gap-3 mt-4">
-          <Button variant="ghost" onClick={()=>setCsvOpen(false)} className="flex-1 justify-center">Cancel</Button>
-          <Button onClick={importCSV} disabled={!csvRows.length||importing} className="flex-1 justify-center">
-            {importing ? <><Spinner size={14} color="#000"/> Importing…</> : `Import ${csvRows.length} Contacts`}
-          </Button>
+        <div style={{display:"flex",gap:10,marginTop:16}}>
+          <GBtn ch="Cancel" onClick={()=>setCsvOpen(false)} sx={{flex:1}}/>
+          <Btn ch={importing?"Importing…":`Import ${csvRows.length} Contacts`}
+            onClick={importCSV} disabled={!csvRows.length||importing} style={{flex:1}}/>
         </div>
       </Modal>
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast}/>}
+      {toast&&(
+        <div style={{position:"fixed",bottom:20,right:20,zIndex:999,
+          padding:"11px 18px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
+          background:toast.t==="success"?`${C.g1}ee`:`${C.red}ee`,
+          color:toast.t==="error"?"#fff":"#000"}}
+          onClick={()=>setToast(null)}>
+          {toast.t==="success"?"✓":"✕"} {toast.m}
+        </div>
+      )}
     </div>
   );
 }
