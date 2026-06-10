@@ -3,112 +3,124 @@ import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Campaign         from "@/models/Campaign";
 
-const BASE  = "https://wapi.flaxxa.com";
-const TOKEN = () => process.env.FLAXXA_TOKEN;
+const BASE = "https://wapi.flaxxa.com";
 
-async function sendOne(phone, templateName, templateLang, params, mediaUrl, headerFormat) {
+async function sendTemplate(phone, templateName, templateLang, params, mediaUrl, headerFormat) {
   const components = [];
-
   if (mediaUrl && headerFormat) {
     const fmt = headerFormat.toUpperCase();
-    const paramObj =
-      fmt === "IMAGE"    ? { type:"image",    image:    { link:mediaUrl } } :
-      fmt === "DOCUMENT" ? { type:"document", document: { link:mediaUrl, filename:"Document" } } :
-      fmt === "VIDEO"    ? { type:"video",    video:    { link:mediaUrl } } : null;
-    if (paramObj) components.push({ type:"header", parameters:[paramObj] });
+    const p = fmt==="IMAGE"    ? {type:"image",    image:    {link:mediaUrl}}
+            : fmt==="DOCUMENT" ? {type:"document", document: {link:mediaUrl,filename:"Document"}}
+            : fmt==="VIDEO"    ? {type:"video",    video:    {link:mediaUrl}}
+            : null;
+    if (p) components.push({type:"header", parameters:[p]});
   }
-
   if (params?.length) {
-    components.push({ type:"body", parameters:params.map(v=>({ type:"text", text:String(v) })) });
+    components.push({type:"body", parameters:params.map(v=>({type:"text",text:String(v||"")}))});
   }
-
   const r = await fetch(`${BASE}/api/v1/sendtemplatemessage`, {
     method:"POST",
-    headers:{ "Content-Type":"application/json" },
+    headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      token:             TOKEN(),
+      token:             process.env.FLAXXA_TOKEN,
       phone:             String(phone),
       template_name:     templateName,
-      template_language: templateLang || "en",
+      template_language: templateLang||"en",
       components,
     }),
   });
-  const data = await r.json();
-  const ok   = r.ok && (data?.status==="success" || data?.message_id || data?.message_wamid);
-  return { ok, wamid: data?.message_wamid || String(data?.message_id||""), error: data?.message || "" };
+  const d = await r.json();
+  const ok = r.ok && (d?.status==="success"||d?.message_id||d?.message_wamid);
+  return {ok, wamid:d?.message_wamid||String(d?.message_id||""), error:d?.message||""};
 }
 
 export async function POST(req) {
-  await connectDB();
-  const {
-    name, templateName, templateLang,
-    contacts, delay=1200,
-    mediaUrl, headerFormat, scheduledAt,
-  } = await req.json();
+  const db = await connectDB();
+  const {name,templateName,templateLang,contacts,delay=1200,mediaUrl,headerFormat,scheduledAt} = await req.json();
 
-  if (!contacts?.length || !templateName)
-    return NextResponse.json({ error:"Missing fields" }, { status:400 });
+  if (!contacts?.length||!templateName)
+    return NextResponse.json({error:"Missing fields"},{status:400});
 
-  // Create campaign
+  // Create campaign record
   const campaign = await Campaign.create({
-    name:         name || `Bulk ${templateName} ${new Date().toLocaleDateString()}`,
-    templateName, templateLang, mediaUrl, headerFormat,
+    name:          name||`Bulk ${templateName} ${new Date().toLocaleDateString()}`,
+    templateName,  templateLang, mediaUrl, headerFormat,
     totalContacts: contacts.length,
     delay,
-    scheduledAt:  scheduledAt ? new Date(scheduledAt) : null,
-    status:       "running",
-    results: contacts.map(c=>({ phone:c.phone, name:c.name, params:c.params||[], status:"pending" })),
+    scheduledAt:   scheduledAt ? new Date(scheduledAt) : null,
+    status:        scheduledAt && new Date(scheduledAt)>new Date() ? "scheduled" : "running",
+    results:       contacts.map(c=>({phone:c.phone,name:c.name,params:c.params||[],status:"pending"})),
   });
 
-  const isScheduled = scheduledAt && new Date(scheduledAt) > new Date();
+  const campaignId = campaign._id.toString();
 
-  if (isScheduled) {
-    await Campaign.findByIdAndUpdate(campaign._id, { status:"scheduled" });
-    const msUntil = new Date(scheduledAt) - Date.now();
-    // Fire and forget after delay
-    setTimeout(async () => {
-      await executeCampaign(campaign._id.toString(), contacts, templateName, templateLang, delay, mediaUrl, headerFormat);
-    }, msUntil);
-    return NextResponse.json({ campaignId:campaign._id, status:"scheduled" }, { status:201 });
+  // For scheduled — return immediately
+  if (scheduledAt && new Date(scheduledAt) > new Date()) {
+    return NextResponse.json({campaignId, status:"scheduled"},{status:201});
   }
 
-  // Run immediately — fire and forget (don't await)
-  executeCampaign(campaign._id.toString(), contacts, templateName, templateLang, delay, mediaUrl, headerFormat);
+  // Use a streaming response so the connection stays open while we send
+  const encoder = new TextEncoder();
+  const stream  = new ReadableStream({
+    async start(controller) {
+      const send = (data) => {
+        try { controller.enqueue(encoder.encode(JSON.stringify(data)+"\n")); } catch{}
+      };
 
-  return NextResponse.json({ campaignId:campaign._id, status:"running" }, { status:201 });
-}
+      // Send campaign ID immediately
+      send({type:"init", campaignId});
 
-async function executeCampaign(campaignId, contacts, templateName, templateLang, delay, mediaUrl, headerFormat) {
-  try {
-    await connectDB();
-    for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i];
-      try {
-        const { ok, wamid, error } = await sendOne(
-          c.phone, templateName, templateLang, c.params, mediaUrl, headerFormat
-        );
-        await Campaign.findByIdAndUpdate(campaignId, {
-          $set: {
-            [`results.${i}.status`]: ok ? "sent" : "failed",
-            [`results.${i}.wamid`]:  wamid,
-            [`results.${i}.error`]:  ok ? "" : error,
-            [`results.${i}.sentAt`]: new Date(),
-          },
-          $inc: { sent:ok?1:0, failed:ok?0:1 },
-        });
-      } catch(e) {
-        await Campaign.findByIdAndUpdate(campaignId, {
-          $set: { [`results.${i}.status`]:"failed", [`results.${i}.error`]:e.message },
-          $inc: { failed:1 },
-        });
+      let sent=0, failed=0;
+      for (let i=0; i<contacts.length; i++) {
+        const c = contacts[i];
+        try {
+          const {ok,wamid,error} = await sendTemplate(
+            c.phone, templateName, templateLang, c.params, mediaUrl, headerFormat
+          );
+          if (ok) sent++; else failed++;
+
+          // Update DB
+          await Campaign.findByIdAndUpdate(campaignId, {
+            $set:{
+              [`results.${i}.status`]: ok?"sent":"failed",
+              [`results.${i}.wamid`]:  wamid,
+              [`results.${i}.error`]:  ok?"":error,
+              [`results.${i}.sentAt`]: new Date(),
+            },
+            $inc:{sent:ok?1:0, failed:ok?0:1},
+          });
+
+          // Stream progress to frontend
+          send({type:"progress", index:i, total:contacts.length, sent, failed,
+            result:{phone:c.phone,name:c.name,status:ok?"sent":"failed",error:ok?"":error}});
+
+        } catch(e) {
+          failed++;
+          await Campaign.findByIdAndUpdate(campaignId,{
+            $set:{[`results.${i}.status`]:"failed",[`results.${i}.error`]:e.message},
+            $inc:{failed:1},
+          }).catch(()=>{});
+          send({type:"progress", index:i, total:contacts.length, sent, failed,
+            result:{phone:c.phone,name:c.name,status:"failed",error:e.message}});
+        }
+
+        if (i < contacts.length-1) {
+          await new Promise(r=>setTimeout(r, delay));
+        }
       }
-      if (i < contacts.length - 1) {
-        await new Promise(r => setTimeout(r, delay || 1200));
-      }
+
+      // Mark done
+      await Campaign.findByIdAndUpdate(campaignId,{status:"done",completedAt:new Date()});
+      send({type:"done", campaignId, sent, failed, total:contacts.length});
+      controller.close();
     }
-    await Campaign.findByIdAndUpdate(campaignId, { status:"done", completedAt:new Date() });
-  } catch(e) {
-    console.error("Campaign error:", e.message);
-    await Campaign.findByIdAndUpdate(campaignId, { status:"stopped" }).catch(()=>{});
-  }
+  });
+
+  return new Response(stream, {
+    headers:{
+      "Content-Type":  "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "X-Campaign-Id": campaignId,
+    },
+  });
 }

@@ -81,7 +81,6 @@ export default function BulkSend() {
   const startBulk = async () => {
     setSending(true); setStep(3);
 
-    // Build scheduledAt datetime
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
       scheduledAt = new Date(`${schedDate}T${schedTime}`).toISOString();
@@ -93,50 +92,66 @@ export default function BulkSend() {
       params: getParams(r),
     }));
 
-    const r = await fetch("/api/messages/bulk", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        name:        campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
-        templateName:tpl.name,
-        templateLang:tpl.language || "en",
-        contacts, delay, mediaUrl, headerFormat:headerFmt,
-        scheduledAt,
-      }),
-    });
-    const d = await r.json();
-    if (r.ok) {
-      setCampId(d.campaignId);
-      if (d.status === "scheduled") {
-        showToast(`Scheduled! Will send at ${schedDate} ${schedTime}`);
-        setSending(false);
-      } else {
-        // Poll campaign progress
-        // Poll every 2 seconds immediately
-      let pollCount = 0;
-      const poll = setInterval(async () => {
-        pollCount++;
-        try {
-          const pr = await fetch(`/api/campaigns/${d.campaignId}`);
-          const pd = await pr.json();
-          if (pd.campaign) {
-            setCampData(pd.campaign);
-            if (pd.campaign.status==="done" || pd.campaign.status==="stopped") {
-              clearInterval(poll);
-              setSending(false);
-              showToast(
-                `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
-                pd.campaign.failed > 0 ? "warning" : "success"
-              );
-            }
-          }
-          // Stop polling after 30 min (900 polls × 2s)
-          if (pollCount > 900) { clearInterval(poll); setSending(false); }
-        } catch(e) { console.error("Poll error:", e); }
-      }, 2000);
+    try {
+      const r = await fetch("/api/messages/bulk", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name:         campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
+          templateName: tpl.name,
+          templateLang: tpl.language || "en",
+          contacts, delay, mediaUrl, headerFormat:headerFmt, scheduledAt,
+        }),
+      });
+
+      if (!r.ok) {
+        const errData = await r.json().catch(()=>({}));
+        showToast(errData.error||"Request failed","error");
+        setSending(false); setStep(2); return;
       }
-    } else {
-      showToast(d.error || "Failed", "error");
+
+      if (scheduledAt && new Date(scheduledAt) > new Date()) {
+        showToast(`Scheduled for ${schedDate} ${schedTime}`);
+        setSending(false); return;
+      }
+
+      // Read streaming response
+      const reader  = r.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = "";
+      let   lSent=0, lFailed=0, lResults=[];
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream:true});
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type==="init") {
+              setCampId(msg.campaignId);
+            } else if (msg.type==="progress") {
+              lSent=msg.sent; lFailed=msg.failed;
+              if (msg.result) lResults=[...lResults,msg.result];
+              setCampData({status:"running",totalContacts:msg.total,
+                sent:msg.sent,failed:msg.failed,results:lResults});
+            } else if (msg.type==="done") {
+              setCampData({status:"done",totalContacts:msg.total,
+                sent:msg.sent,failed:msg.failed,results:lResults});
+              setSending(false);
+              showToast(`Done! ${msg.sent} sent, ${msg.failed} failed`,
+                msg.failed>0?"warning":"success");
+            }
+          } catch {}
+        }
+      }
+
+    } catch(e) {
+      showToast("Error: "+e.message,"error");
       setSending(false); setStep(2);
     }
   };
