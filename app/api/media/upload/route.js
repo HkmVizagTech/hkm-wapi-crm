@@ -2,64 +2,56 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Media            from "@/models/Media";
+import { createHash }   from "crypto";
 
 export async function POST(req) {
   try {
-    // Check Cloudinary env vars first
     const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
     const API_KEY    = process.env.CLOUDINARY_API_KEY;
     const API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
     if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-      return NextResponse.json({
-        error: "Cloudinary not configured. Add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET to Railway variables."
-      }, { status: 400 });
+      return NextResponse.json({ error:"Cloudinary credentials missing in Railway variables" }, { status:400 });
     }
 
     const fd   = await req.formData();
     const file = fd.get("file");
-    const name = fd.get("name") || file?.name || "upload";
-
     if (!file) return NextResponse.json({ error:"No file provided" }, { status:400 });
 
+    const name = fd.get("name") || file.name || "upload";
     const type = file.type.startsWith("image/") ? "image" : "document";
-    const buf  = Buffer.from(await file.arrayBuffer());
-    const b64  = buf.toString("base64");
-    const uri  = `data:${file.type};base64,${b64}`;
 
-    // Upload to Cloudinary via REST API (no SDK dependency issues)
-    const formData = new FormData();
-    formData.append("file",            uri);
-    formData.append("upload_preset",   "");
-    formData.append("folder",          "hkm-wapi");
-    formData.append("api_key",         API_KEY);
-    formData.append("timestamp",       String(Math.floor(Date.now()/1000)));
+    // Convert file to base64
+    const bytes = await file.arrayBuffer();
+    const b64   = Buffer.from(bytes).toString("base64");
+    const dataUri = `data:${file.type};base64,${b64}`;
 
-    // Generate signature
-    const { createHmac } = await import("crypto");
-    const timestamp = Math.floor(Date.now()/1000);
-    const sigStr    = `folder=hkm-wapi&timestamp=${timestamp}${API_SECRET}`;
-    const signature = createHmac("sha256", API_SECRET)
-      .update(`folder=hkm-wapi&timestamp=${timestamp}`)
-      .digest("hex");
+    // Build Cloudinary signature (SHA1 for upload API)
+    const timestamp = Math.floor(Date.now() / 1000);
+    const toSign    = `folder=hkm-wapi&timestamp=${timestamp}${API_SECRET}`;
+    const signature = createHash("sha1").update(toSign).digest("hex");
 
-    // Use Cloudinary upload API directly
-    const uploadForm = new FormData();
-    uploadForm.append("file",      uri);
-    uploadForm.append("folder",    "hkm-wapi");
-    uploadForm.append("api_key",   API_KEY);
-    uploadForm.append("timestamp", String(timestamp));
-    uploadForm.append("signature", signature);
+    // Upload via multipart form
+    const form = new FormData();
+    form.append("file",      dataUri);
+    form.append("folder",    "hkm-wapi");
+    form.append("api_key",   API_KEY);
+    form.append("timestamp", String(timestamp));
+    form.append("signature", signature);
 
     const r = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`,
-      { method:"POST", body:uploadForm }
+      { method:"POST", body:form }
     );
 
     const d = await r.json();
 
     if (!r.ok || d.error) {
-      return NextResponse.json({ error: d.error?.message || "Cloudinary upload failed" }, { status:500 });
+      console.error("Cloudinary error:", d.error);
+      return NextResponse.json({
+        error: d.error?.message || "Cloudinary upload failed",
+        detail: d
+      }, { status:500 });
     }
 
     // Save to MongoDB
@@ -75,7 +67,7 @@ export async function POST(req) {
     return NextResponse.json({ media }, { status:201 });
 
   } catch(e) {
-    console.error("Upload error:", e.message);
+    console.error("Upload error:", e);
     return NextResponse.json({ error: e.message }, { status:500 });
   }
 }
