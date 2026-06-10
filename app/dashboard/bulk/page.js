@@ -1,100 +1,150 @@
 "use client";
 import { useState, useRef } from "react";
-import { TEMPLATES, parseCSV, downloadCSV } from "@/lib/utils";
+import { TEMPLATES, parseCSV, downloadCSV, relTime } from "@/lib/utils";
 
-const C={g1:"#25d366",teal:"#00c9d4",blue:"#2979ff",amber:"#ffb300",red:"#f44336",
-  card:"#111827",surf:"#0d1117",border:"#1c2a3f",tx:"#e8edf5",txs:"#8899b0",txd:"#445566"};
-const IS={width:"100%",background:C.surf,border:`1px solid ${C.border}`,borderRadius:10,
-  padding:"10px 13px",color:C.tx,fontSize:13,outline:"none",boxSizing:"border-box"};
-const Btn=({ch,onClick,disabled,sx={}})=>(
-  <button onClick={onClick} disabled={disabled} style={{
-    padding:"10px 20px",borderRadius:9,border:"none",fontWeight:700,fontSize:13,
-    background:`linear-gradient(135deg,${C.g1},#1aad52)`,color:"#000",
-    cursor:disabled?"not-allowed":"pointer",opacity:disabled?.4:1,
-    display:"inline-flex",alignItems:"center",gap:6,...sx}}>
-    {ch}
-  </button>
-);
+const C = {
+  g1:"#25d366", g2:"#1aad52", teal:"#00c9d4", blue:"#2979ff",
+  amber:"#ffb300", red:"#f44336", purple:"#9c27b0",
+  card:"#111827", surf:"#0d1117", border:"#1c2a3f",
+  tx:"#e8edf5", txs:"#8899b0", txd:"#445566",
+};
+const IS = {
+  width:"100%", background:C.surf, border:`1px solid ${C.border}`,
+  borderRadius:10, padding:"10px 13px", color:C.tx, fontSize:13,
+  outline:"none", boxSizing:"border-box", fontFamily:"inherit",
+};
+const Btn = ({ch,onClick,disabled,variant="primary",sx={}}) => {
+  const bg = variant==="primary" ? `linear-gradient(135deg,${C.g1},${C.g2})`
+           : variant==="teal"    ? `linear-gradient(135deg,${C.teal},#0097a7)`
+           : "transparent";
+  const col  = variant==="ghost" ? C.txs : "#000";
+  const bdr  = variant==="ghost" ? `1px solid ${C.border}` : "none";
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      padding:"10px 20px", borderRadius:9, border:bdr, fontWeight:700, fontSize:13,
+      background:bg, color:col, cursor:disabled?"not-allowed":"pointer",
+      opacity:disabled?.4:1, display:"inline-flex", alignItems:"center", gap:6, ...sx}}>
+      {ch}
+    </button>
+  );
+};
+
+const STEPS = ["Template","Upload CSV","Preview & Schedule","Sending"];
 
 export default function BulkSend() {
-  const [step,setStep]=useState(0);
-  const [tplId,setTplId]=useState("");
-  const [csvRows,setCsvRows]=useState([]);
-  const [csvErr,setCsvErr]=useState("");
-  const [campName,setCampName]=useState("");
-  const [delay,setDelay]=useState(1200);
-  const [sending,setSending]=useState(false);
-  const [campaignId,setCampaignId]=useState(null);
-  const [campData,setCampData]=useState(null);
-  const [toast,setToast]=useState(null);
-  const fileRef=useRef();
-  const pollRef=useRef();
+  const [step,     setStep]     = useState(0);
+  const [tplId,    setTplId]    = useState("");
+  const [csvRows,  setCsvRows]  = useState([]);
+  const [csvErr,   setCsvErr]   = useState("");
+  const [campName, setCampName] = useState("");
+  const [delay,    setDelay]    = useState(1200);
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [schedule, setSchedule] = useState(false);
+  const [schedDate,setSchedDate]= useState("");
+  const [schedTime,setSchedTime]= useState("");
+  const [sending,  setSending]  = useState(false);
+  const [campId,   setCampId]   = useState(null);
+  const [campData, setCampData] = useState(null);
+  const [toast,    setToast]    = useState(null);
+  const fileRef = useRef();
 
-  const approved=TEMPLATES.filter(t=>t.status==="APPROVED");
-  const tpl=approved.find(t=>t.id===tplId);
-  const showToast=(m,t="success")=>{setToast({m,t});setTimeout(()=>setToast(null),4000);};
+  const approved   = TEMPLATES.filter(t => t.status === "APPROVED");
+  const tpl        = approved.find(t => t.id === tplId);
+  const hasHeader  = tpl?.header && ["IMAGE","DOCUMENT","VIDEO"].includes(String(tpl.header));
+  const headerFmt  = hasHeader ? String(tpl.header) : null;
 
-  const getParams=row=>tpl.params.map((_,i)=>{
-    const v=row[`param${i+1}`];if(v)return v;
-    const extras=Object.keys(row).filter(h=>h!=="phone"&&h!=="name");
-    return row[extras[i]]||"";
+  const showToast = (m,t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+
+  const getParams = row => (tpl?.params||[]).map((_,i) => {
+    const v = row[`param${i+1}`];
+    if (v) return v;
+    const extras = Object.keys(row).filter(h=>h!=="phone"&&h!=="name");
+    return row[extras[i]] || "";
   });
 
-  const handleFile=e=>{
-    const file=e.target.files[0];if(!file)return;
-    setCsvErr("");setCsvRows([]);
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      try{
-        const{headers,rows}=parseCSV(ev.target.result);
-        if(!headers.includes("phone")){setCsvErr('CSV must have a "phone" column');return;}
-        if(!rows.length){setCsvErr("No data rows found");return;}
-        setCsvRows(rows.filter(r=>r.phone?.trim()));
+  const handleFile = e => {
+    const file = e.target.files[0]; if (!file) return;
+    setCsvErr(""); setCsvRows([]);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const { headers, rows } = parseCSV(ev.target.result);
+        if (!headers.includes("phone")) { setCsvErr('CSV must have a "phone" column'); return; }
+        if (!rows.length) { setCsvErr("No data rows found"); return; }
+        setCsvRows(rows.filter(r => r.phone?.trim()));
         setStep(2);
-      }catch(err){setCsvErr("Parse error: "+err.message);}
+      } catch(err) { setCsvErr("Parse error: " + err.message); }
     };
-    reader.readAsText(file);e.target.value="";
+    reader.readAsText(file); e.target.value = "";
   };
 
-  const startBulk=async()=>{
-    setSending(true);setStep(3);
-    const contacts=csvRows.map(r=>({
-      phone:r.phone.trim().replace(/^\+/,""),
-      name:r.name||r.phone,
-      params:getParams(r),
+  const startBulk = async () => {
+    setSending(true); setStep(3);
+
+    // Build scheduledAt datetime
+    let scheduledAt = null;
+    if (schedule && schedDate && schedTime) {
+      scheduledAt = new Date(`${schedDate}T${schedTime}`).toISOString();
+    }
+
+    const contacts = csvRows.map(r => ({
+      phone:  r.phone.trim().replace(/^\+/,""),
+      name:   r.name || r.phone,
+      params: getParams(r),
     }));
-    const r=await fetch("/api/messages/bulk",{method:"POST",
+
+    const r = await fetch("/api/messages/bulk", {
+      method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name:campName||`Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
-        templateName:tpl.name,templateLang:tpl.language||"en",contacts,delay})});
-    const d=await r.json();
-    if(r.ok){
-      setCampaignId(d.campaignId);
-      pollRef.current=setInterval(async()=>{
-        const pr=await fetch(`/api/campaigns/${d.campaignId}`);
-        const pd=await pr.json();
-        if(pd.campaign){
-          setCampData(pd.campaign);
-          if(pd.campaign.status==="done"||pd.campaign.status==="stopped"){
-            clearInterval(pollRef.current);setSending(false);
-            showToast(`Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
-              pd.campaign.failed>0?"warning":"success");
+      body: JSON.stringify({
+        name:        campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
+        templateName:tpl.name,
+        templateLang:tpl.language || "en",
+        contacts, delay, mediaUrl, headerFormat:headerFmt,
+        scheduledAt,
+      }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      setCampId(d.campaignId);
+      if (d.status === "scheduled") {
+        showToast(`Scheduled! Will send at ${schedDate} ${schedTime}`);
+        setSending(false);
+      } else {
+        // Poll campaign progress
+        const poll = setInterval(async () => {
+          const pr  = await fetch(`/api/campaigns/${d.campaignId}`);
+          const pd  = await pr.json();
+          if (pd.campaign) {
+            setCampData(pd.campaign);
+            if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
+              clearInterval(poll);
+              setSending(false);
+              showToast(
+                `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
+                pd.campaign.failed > 0 ? "warning" : "success"
+              );
+            }
           }
-        }
-      },2500);
-    }else{
-      showToast(d.error||"Failed","error");setSending(false);setStep(2);
+        }, 2500);
+      }
+    } else {
+      showToast(d.error || "Failed", "error");
+      setSending(false); setStep(2);
     }
   };
 
-  const total=campData?.totalContacts||csvRows.length||1;
-  const done=(campData?.sent||0)+(campData?.failed||0);
-  const pct=Math.round((done/total)*100);
+  const total = campData?.totalContacts || csvRows.length || 1;
+  const done  = (campData?.sent||0) + (campData?.failed||0);
+  const pct   = Math.round((done/total)*100);
 
-  const STEPS=["Template","Upload CSV","Preview","Sending"];
+  // Min datetime for schedule (now + 5 min)
+  const minDateTime = new Date(Date.now() + 5*60000).toISOString().slice(0,16);
+  const minDate     = minDateTime.slice(0,10);
+  const minTime     = minDateTime.slice(11,16);
 
   return (
-    <div style={{padding:24,maxWidth:900,margin:"0 auto"}}>
+    <div style={{padding:24, maxWidth:900, margin:"0 auto"}}>
       <div style={{marginBottom:24}}>
         <h1 style={{fontSize:20,fontWeight:800}}>📤 Bulk Send</h1>
         <p style={{fontSize:13,color:C.txs,marginTop:2}}>Send template messages to multiple contacts via CSV</p>
@@ -113,16 +163,16 @@ export default function BulkSend() {
                 color:step>=i?C.g1:C.txd}}>{s}</span>
             </div>
             {i<3&&<div style={{flex:1,height:2,margin:"0 6px",marginBottom:16,
-              background:step>i?C.g1:C.border,transition:"background .3s"}}/>}
+              background:step>i?C.g1:C.border}}/>}
           </div>
         ))}
       </div>
 
-      {/* STEP 0 */}
+      {/* STEP 0 — Pick template */}
       {step===0&&(
         <div>
           <p style={{fontSize:13,color:C.txs,marginBottom:16}}>
-            Select an approved template. CSV columns will map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
+            Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
           </p>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {approved.map(t=>(
@@ -132,18 +182,28 @@ export default function BulkSend() {
                 borderRadius:12,padding:16,cursor:"pointer",transition:"all .15s"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1,paddingRight:8}}>
-                    <div style={{fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-all"}}>{t.name}</div>
-                    <p style={{fontSize:12,color:C.txs,marginTop:5,lineHeight:1.5,
-                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{t.body}</p>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                      <span style={{fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-all"}}>{t.name}</span>
+                      {t.header&&["IMAGE","DOCUMENT","VIDEO"].includes(String(t.header))&&(
+                        <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
+                          background:`${C.blue}18`,color:C.blue,flexShrink:0}}>
+                          {t.header==="IMAGE"?"🖼 IMAGE":t.header==="DOCUMENT"?"📄 DOC":"🎥 VIDEO"}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{fontSize:12,color:C.txs,lineHeight:1.5,marginBottom:6,
+                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                      {t.body}
+                    </p>
                     {t.params.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
                         {t.params.map((p,i)=>(
                           <span key={i} style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
                             background:`${C.blue}14`,color:C.blue}}>{`{{${i+1}}}`} {p}</span>
                         ))}
                       </div>
                     )}
-                    {t.params.length===0&&<p style={{fontSize:11,color:C.txd,marginTop:5}}>No variables — same message for all</p>}
+                    {t.params.length===0&&<p style={{fontSize:11,color:C.txd}}>No variables — same message for all</p>}
                   </div>
                   <div style={{width:20,height:20,borderRadius:"50%",flexShrink:0,
                     border:`2px solid ${tplId===t.id?C.g1:C.border}`,
@@ -162,119 +222,221 @@ export default function BulkSend() {
         </div>
       )}
 
-      {/* STEP 1 */}
+      {/* STEP 1 — Upload CSV */}
       {step===1&&tpl&&(
         <div>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
-            <button onClick={()=>setStep(0)} style={{background:"none",border:"none",color:C.txs,fontSize:14,cursor:"pointer"}}>← Back</button>
+            <button onClick={()=>setStep(0)} style={{background:"none",border:"none",
+              color:C.txs,fontSize:14,cursor:"pointer"}}>← Back</button>
             <div>
               <h2 style={{fontSize:15,fontWeight:800}}>Upload CSV</h2>
               <p style={{fontSize:12,color:C.txs}}>Template: <strong style={{color:C.g1}}>{tpl.name}</strong></p>
             </div>
           </div>
+
+          {/* Image header upload */}
+          {hasHeader&&(
+            <div style={{background:C.card,border:`2px solid ${C.blue}40`,borderRadius:12,
+              padding:16,marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
+                {headerFmt==="IMAGE"?"🖼":headerFmt==="DOCUMENT"?"📄":"🎥"} {headerFmt} Header Required
+              </div>
+              <p style={{fontSize:12,color:C.txs,marginBottom:10,lineHeight:1.5}}>
+                This template has a <strong style={{color:C.blue}}>{headerFmt}</strong> header.
+                Provide a public URL for the {headerFmt.toLowerCase()} to send with every message.
+              </p>
+              <div style={{marginBottom:8}}>
+                <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                  textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>
+                  {headerFmt} URL (public HTTPS link)
+                </label>
+                <input style={IS} value={mediaUrl} onChange={e=>setMediaUrl(e.target.value)}
+                  placeholder={
+                    headerFmt==="IMAGE"    ? "https://res.cloudinary.com/your-cloud/image/upload/..." :
+                    headerFmt==="DOCUMENT" ? "https://example.com/receipt.pdf" :
+                    "https://example.com/video.mp4"
+                  }/>
+              </div>
+              {headerFmt==="IMAGE"&&mediaUrl&&(
+                <div style={{borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`,
+                  display:"inline-block"}}>
+                  <img src={mediaUrl} alt="preview"
+                    style={{maxHeight:120,maxWidth:300,display:"block",objectFit:"cover"}}
+                    onError={e=>e.target.style.display="none"}/>
+                </div>
+              )}
+              <p style={{fontSize:11,color:C.txd,marginTop:8}}>
+                💡 Upload images to Media Library first to get a Cloudinary URL →{" "}
+                <a href="/dashboard/media" target="_blank" style={{color:C.teal}}>Media Library</a>
+              </p>
+            </div>
+          )}
+
+          {/* CSV format */}
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:14}}>
             <p style={{fontSize:11,fontWeight:700,color:C.txs,textTransform:"uppercase",
               letterSpacing:".5px",marginBottom:10}}>Required CSV format</p>
-            <div style={{overflowX:"auto"}}>
+            <div style={{overflowX:"auto",marginBottom:10}}>
               <table style={{borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr>
-                  {["phone *","name",...tpl.params.map((_,i)=>`param${i+1}`)].map(h=>(
+                  {["phone *","name",...(tpl.params||[]).map((_,i)=>`param${i+1}`)].map(h=>(
                     <th key={h} style={{padding:"6px 12px",textAlign:"left",fontWeight:800,
                       background:"rgba(37,211,102,.1)",color:C.g1,border:`1px solid ${C.border}`}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody><tr>
-                  {["918977761187","Mukunda",...tpl.params.map(p=>p+" value")].map((v,i)=>(
+                  {["918977761187","Mukunda",...(tpl.params||[]).map(p=>p+" value")].map((v,i)=>(
                     <td key={i} style={{padding:"6px 12px",border:`1px solid ${C.border}`,color:C.txs}}>{v}</td>
                   ))}
                 </tr></tbody>
               </table>
             </div>
-            <div style={{fontSize:11,color:C.txd,marginTop:10,lineHeight:1.8}}>
-              {tpl.params.map((p,i)=>(
-                <span key={i}><strong style={{color:C.blue}}>param{i+1}</strong> → {`{{${i+1}}}`} ({p}) &nbsp;</span>
-              ))}
-            </div>
           </div>
 
           <div style={{marginBottom:14}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-              textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Campaign Name (optional)</label>
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Campaign Name</label>
             <input style={IS} placeholder={`Bulk ${tpl.name} ${new Date().toLocaleDateString()}`}
               value={campName} onChange={e=>setCampName(e.target.value)}/>
           </div>
+
           <div style={{marginBottom:16}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-              textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Delay between sends (ms)</label>
-            <input style={IS} type="number" min={500} max={10000} value={delay}
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Delay (ms)</label>
+            <input style={IS} type="number" min={500} value={delay}
               onChange={e=>setDelay(Number(e.target.value))}/>
             <p style={{fontSize:11,color:C.txd,marginTop:4}}>Keep ≥1000ms to avoid rate limits</p>
           </div>
 
           <button onClick={()=>downloadCSV(`${tpl.name}_sample.csv`,
-            ["phone","name",...tpl.params.map((_,i)=>`param${i+1}`)],
-            [{phone:"918977761187",name:"Mukunda",...Object.fromEntries(tpl.params.map((p,i)=>[`param${i+1}`,p+" value"]))}])}
-            style={{width:"100%",padding:10,borderRadius:9,border:"none",
+            ["phone","name",...(tpl.params||[]).map((_,i)=>`param${i+1}`)],
+            [{phone:"918977761187",name:"Mukunda",...Object.fromEntries((tpl.params||[]).map((p,i)=>[`param${i+1}`,p+" value"]))}])}
+            style={{width:"100%",padding:10,borderRadius:9,border:"none",marginBottom:14,
               background:`linear-gradient(135deg,${C.teal},#0097a7)`,
-              color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:14}}>
-            ⬇ Download Sample CSV for "{tpl.name}"
+              color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+            ⬇ Download Sample CSV
           </button>
 
           <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{display:"none"}}/>
           <div onClick={()=>fileRef.current?.click()} style={{
-            border:`2px dashed ${C.border}`,borderRadius:12,padding:"36px 20px",
-            textAlign:"center",cursor:"pointer",transition:"border-color .15s"}}
+            border:`2px dashed ${C.border}`,borderRadius:12,padding:"32px 20px",
+            textAlign:"center",cursor:"pointer"}}
             onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.g1;}}
             onDragLeave={e=>e.currentTarget.style.borderColor=C.border}
             onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.border;
               const f=e.dataTransfer.files[0];if(!f)return;
               const ev={target:{files:[f],value:""}};handleFile(ev);}}>
-            <div style={{fontSize:40,marginBottom:10}}>📁</div>
-            <div style={{fontWeight:700,fontSize:15}}>Tap to upload CSV or drag & drop</div>
-            <div style={{fontSize:13,color:C.txs,marginTop:4}}>Supports .csv and .txt files</div>
+            <div style={{fontSize:38,marginBottom:8}}>📁</div>
+            <div style={{fontWeight:700,fontSize:14}}>Tap to upload CSV or drag & drop</div>
+            <div style={{fontSize:12,color:C.txs,marginTop:4}}>Supports .csv and .txt</div>
           </div>
           {csvErr&&<p style={{color:C.red,fontSize:13,fontWeight:600,marginTop:10}}>✕ {csvErr}</p>}
         </div>
       )}
 
-      {/* STEP 2 */}
+      {/* STEP 2 — Preview & Schedule */}
       {step===2&&tpl&&(
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div>
-              <h2 style={{fontSize:15,fontWeight:800}}>Preview — {csvRows.length} recipients</h2>
-              <p style={{fontSize:12,color:C.txs}}>Template: <strong style={{color:C.g1}}>{tpl.name}</strong></p>
+              <h2 style={{fontSize:15,fontWeight:800}}>Preview & Schedule</h2>
+              <p style={{fontSize:12,color:C.txs}}>{csvRows.length} recipients · <strong style={{color:C.g1}}>{tpl.name}</strong></p>
             </div>
             <button onClick={()=>{setCsvRows([]);setStep(1);}} style={{
               background:"none",border:`1px solid ${C.border}`,borderRadius:8,
               color:C.txs,fontSize:13,padding:"6px 12px",cursor:"pointer"}}>← Re-upload</button>
           </div>
 
+          {/* Image header preview */}
+          {hasHeader&&mediaUrl&&(
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+              padding:14,marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
+              {headerFmt==="IMAGE"?(
+                <img src={mediaUrl} alt="header" style={{width:60,height:60,borderRadius:8,objectFit:"cover"}}
+                  onError={e=>e.target.style.display="none"}/>
+              ):(
+                <div style={{width:60,height:60,borderRadius:8,background:C.surf,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>
+                  {headerFmt==="DOCUMENT"?"📄":"🎥"}
+                </div>
+              )}
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>{headerFmt} Header</div>
+                <div style={{fontSize:11,color:C.txs,wordBreak:"break-all"}}>{mediaUrl.slice(0,50)}…</div>
+              </div>
+            </div>
+          )}
+
+          {/* Schedule toggle */}
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+            padding:16,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:schedule?14:0}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14}}>⏰ Schedule Send</div>
+                <div style={{fontSize:12,color:C.txs,marginTop:2}}>Send at a specific date & time</div>
+              </div>
+              <button onClick={()=>setSchedule(s=>!s)} style={{
+                padding:"6px 16px",borderRadius:20,border:`1px solid ${schedule?C.g1:C.border}`,
+                background:schedule?`${C.g1}18`:"transparent",
+                color:schedule?C.g1:C.txs,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                {schedule?"✓ Scheduled":"Send Now"}
+              </button>
+            </div>
+            {schedule&&(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                    textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Date</label>
+                  <input style={IS} type="date" min={minDate}
+                    value={schedDate} onChange={e=>setSchedDate(e.target.value)}/>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                    textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Time (IST)</label>
+                  <input style={IS} type="time"
+                    min={schedDate===minDate?minTime:undefined}
+                    value={schedTime} onChange={e=>setSchedTime(e.target.value)}/>
+                </div>
+                {schedDate&&schedTime&&(
+                  <div style={{gridColumn:"span 2",padding:"10px 14px",borderRadius:8,
+                    background:`${C.g1}08`,border:`1px solid ${C.g1}20`,
+                    fontSize:13,color:C.g1,fontWeight:600}}>
+                    ✓ Will send on {new Date(`${schedDate}T${schedTime}`).toLocaleString("en-IN",
+                      {dateStyle:"full",timeStyle:"short"})}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Warning */}
           <div style={{padding:"10px 14px",borderRadius:10,marginBottom:16,fontSize:13,
             background:"rgba(255,179,0,.06)",border:"1px solid rgba(255,179,0,.3)",color:C.amber}}>
-            ⚠ This will send <strong>{csvRows.length} WhatsApp messages</strong> from your Flaxxa WAPI account.
+            ⚠ This will send <strong>{csvRows.length} WhatsApp messages</strong>.
             ~{Math.ceil(csvRows.length*delay/60000)} min at {delay}ms delay.
           </div>
 
+          {/* Recipients preview */}
           <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
             overflow:"hidden",marginBottom:18}}>
             <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,
               fontWeight:700,fontSize:13,display:"flex",justifyContent:"space-between"}}>
-              <span>Preview</span><span style={{color:C.txs,fontWeight:400}}>{csvRows.length} rows</span>
+              <span>Recipients Preview</span>
+              <span style={{color:C.txs,fontWeight:400}}>{csvRows.length} rows</span>
             </div>
-            <div style={{maxHeight:320,overflowY:"auto"}}>
+            <div style={{maxHeight:280,overflowY:"auto"}}>
               {csvRows.slice(0,20).map((row,i)=>{
                 const params=getParams(row);
                 let preview=tpl.body;
-                params.forEach((v,idx)=>{ preview=preview.replace(new RegExp(`\\{\\{${idx+1}\\}\\}`,"g"),v||`{{${idx+1}}}`); });
+                params.forEach((v,idx)=>{preview=preview.replace(new RegExp(`\\{\\{${idx+1}\\}\\}`,"g"),v||`{{${idx+1}}}`);});
                 return (
-                  <div key={i} style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}50`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <div key={i} style={{padding:"11px 16px",borderBottom:`1px solid ${C.border}50`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{fontWeight:700,fontSize:13}}>{row.name||row.phone}</span>
                       <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:C.txs}}>{row.phone}</span>
                     </div>
                     {params.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:5}}>
                         {params.map((v,idx)=>(
                           <span key={idx} style={{fontSize:10,padding:"1px 8px",borderRadius:20,
                             background:`${C.blue}12`,color:C.blue}}>{`{{${idx+1}}}`}: {v||<em style={{opacity:.5}}>empty</em>}</span>
@@ -282,7 +444,9 @@ export default function BulkSend() {
                       </div>
                     )}
                     <p style={{fontSize:11,color:C.txd,lineHeight:1.5,
-                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{preview}</p>
+                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                      {preview}
+                    </p>
                   </div>
                 );
               })}
@@ -291,58 +455,100 @@ export default function BulkSend() {
           </div>
 
           <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>{setCsvRows([]);setStep(1);}} style={{
-              padding:"10px 20px",borderRadius:9,border:`1px solid ${C.border}`,
-              background:"transparent",color:C.txs,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-              ← Back
-            </button>
-            <Btn ch={`🚀 Send to ${csvRows.length} Contacts`} onClick={startBulk} sx={{flex:1,justifyContent:"center"}}/>
+            <Btn ch="← Back" variant="ghost" onClick={()=>{setCsvRows([]);setStep(1);}}/>
+            <Btn
+              ch={schedule&&schedDate&&schedTime
+                ? `⏰ Schedule for ${schedDate} ${schedTime}`
+                : `🚀 Send to ${csvRows.length} Contacts Now`}
+              onClick={startBulk}
+              disabled={hasHeader&&!mediaUrl||(schedule&&(!schedDate||!schedTime))}
+              sx={{flex:1,justifyContent:"center"}}/>
           </div>
+          {hasHeader&&!mediaUrl&&(
+            <p style={{fontSize:12,color:C.red,marginTop:8,textAlign:"center"}}>
+              ⚠ This template requires a {headerFmt} URL — add it in Step 2
+            </p>
+          )}
         </div>
       )}
 
-      {/* STEP 3 */}
+      {/* STEP 3 — Sending / Results */}
       {step===3&&(
         <div>
           <h2 style={{fontSize:15,fontWeight:800,marginBottom:16}}>
-            {sending?"⚡ Sending…":"✅ Campaign Complete!"}
+            {campData?.status==="scheduled" ? "⏰ Campaign Scheduled!"
+             : sending ? "⚡ Sending…" : "✅ Campaign Complete!"}
           </h2>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:16}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-              <span style={{fontWeight:700}}>{done} / {total} processed</span>
-              <span style={{fontWeight:800,fontSize:20,color:C.g1}}>{pct}%</span>
-            </div>
-            <div style={{height:10,borderRadius:5,overflow:"hidden",background:C.surf,marginBottom:12}}>
-              <div style={{height:"100%",width:`${pct}%`,borderRadius:5,
-                background:`linear-gradient(90deg,${C.g1},${C.teal})`,transition:"width .4s"}}/>
-            </div>
-            <div style={{display:"flex",gap:20,fontSize:13}}>
-              <span style={{fontWeight:700,color:C.g1}}>✓ {campData?.sent||0} sent</span>
-              <span style={{fontWeight:700,color:C.red}}>✕ {campData?.failed||0} failed</span>
-            </div>
-          </div>
-          {campData?.results&&(
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
-              <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,fontWeight:700,fontSize:13}}>Results</div>
-              <div style={{maxHeight:300,overflowY:"auto"}}>
-                {campData.results.filter(r=>r.status!=="pending").map((r,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                    padding:"10px 16px",borderBottom:`1px solid ${C.border}50`,
-                    background:r.status==="failed"?"rgba(244,67,54,.04)":"rgba(37,211,102,.03)"}}>
-                    <div>
-                      <div style={{fontWeight:600,fontSize:13}}>{r.name||r.phone}</div>
-                      <div style={{fontSize:11,color:C.txs,fontFamily:"'JetBrains Mono',monospace"}}>{r.phone}</div>
-                    </div>
-                    <span style={{fontSize:12,fontWeight:700,color:r.status==="failed"?C.red:C.g1}}>
-                      {r.status==="failed"?("✕ "+r.error):"✓ Sent"}
-                    </span>
-                  </div>
-                ))}
+
+          {campData?.status==="scheduled"&&(
+            <div style={{background:C.card,border:`1px solid ${C.g1}`,borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
+              <div style={{fontSize:40,marginBottom:10}}>⏰</div>
+              <div style={{fontWeight:800,fontSize:16,color:C.g1,marginBottom:6}}>Campaign Scheduled!</div>
+              <div style={{fontSize:13,color:C.txs}}>
+                Will automatically send to <strong style={{color:C.tx}}>{csvRows.length} contacts</strong> at<br/>
+                <strong style={{color:C.tx,fontSize:15}}>{schedDate} {schedTime}</strong>
+              </div>
+              <div style={{fontSize:12,color:C.txd,marginTop:10}}>
+                View progress in <a href="/dashboard/campaigns" style={{color:C.g1}}>Campaigns →</a>
               </div>
             </div>
           )}
+
+          {campData?.status!=="scheduled"&&(
+            <>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontWeight:700}}>{done} / {total} processed</span>
+                  <span style={{fontWeight:800,fontSize:20,color:C.g1}}>{pct}%</span>
+                </div>
+                <div style={{height:10,borderRadius:5,overflow:"hidden",background:C.surf,marginBottom:12}}>
+                  <div style={{height:"100%",width:`${pct}%`,borderRadius:5,
+                    background:`linear-gradient(90deg,${C.g1},${C.teal})`,transition:"width .4s"}}/>
+                </div>
+                <div style={{display:"flex",gap:20,fontSize:13}}>
+                  <span style={{fontWeight:700,color:C.g1}}>✓ {campData?.sent||0} sent</span>
+                  <span style={{fontWeight:700,color:C.red}}>✕ {campData?.failed||0} failed</span>
+                </div>
+              </div>
+
+              {campData?.results&&(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                  <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,fontWeight:700,fontSize:13,
+                    display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>Results</span>
+                    {!sending&&(
+                      <button onClick={()=>downloadCSV(`results_${tpl?.name}.csv`,
+                        ["phone","name","status","wamid","error"],
+                        campData.results.map(r=>({phone:r.phone,name:r.name||"",
+                          status:r.status,wamid:r.wamid||"",error:r.error||""})))}
+                        style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,
+                          color:C.txs,fontSize:12,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>
+                        ⬇ Export CSV
+                      </button>
+                    )}
+                  </div>
+                  <div style={{maxHeight:300,overflowY:"auto"}}>
+                    {campData.results.filter(r=>r.status!=="pending").map((r,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                        padding:"10px 16px",borderBottom:`1px solid ${C.border}50`,
+                        background:r.status==="failed"?"rgba(244,67,54,.04)":"rgba(37,211,102,.02)"}}>
+                        <div>
+                          <div style={{fontWeight:600,fontSize:13}}>{r.name||r.phone}</div>
+                          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:C.txs}}>{r.phone}</div>
+                        </div>
+                        <span style={{fontSize:12,fontWeight:700,color:r.status==="failed"?C.red:C.g1}}>
+                          {r.status==="failed"?"✕ "+r.error:"✓ Sent"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {!sending&&(
-            <button onClick={()=>{setStep(0);setTplId("");setCsvRows([]);setCampData(null);setDone&&0;}}
+            <button onClick={()=>{setStep(0);setTplId("");setCsvRows([]);setCampData(null);setMediaUrl("");setSchedule(false);setSchedDate("");setSchedTime("");}}
               style={{width:"100%",padding:10,borderRadius:9,border:`1px solid ${C.border}`,
                 background:"transparent",color:C.txs,fontWeight:700,fontSize:13,cursor:"pointer"}}>
               ← Start New Campaign
@@ -354,9 +560,9 @@ export default function BulkSend() {
       {toast&&(
         <div style={{position:"fixed",bottom:20,right:20,zIndex:999,padding:"11px 18px",
           borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
-          background:toast.t==="success"?`${C.g1}ee`:toast.t==="error"?`#f44336ee`:`${C.amber}ee`,
+          background:toast.t==="success"?`${C.g1}ee`:toast.t==="error"?`${C.red}ee`:`${C.amber}ee`,
           color:toast.t==="error"?"#fff":"#000"}} onClick={()=>setToast(null)}>
-          {toast.t==="success"?"✓":toast.t==="error"?"✕":"ℹ"} {toast.m}
+          {toast.t==="success"?"✓":toast.t==="error"?"✕":"⏰"} {toast.m}
         </div>
       )}
     </div>
