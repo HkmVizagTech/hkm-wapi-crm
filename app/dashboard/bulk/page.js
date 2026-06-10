@@ -1,6 +1,29 @@
 "use client";
-import { useState, useRef } from "react";
-import { TEMPLATES, parseCSV, downloadCSV, relTime } from "@/lib/utils";
+import { useState, useRef, useEffect } from "react";
+import { parseCSV, downloadCSV, relTime } from "@/lib/utils";
+
+function parseBody(s) {
+  try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="BODY")?.text||""; } catch{}return "";
+}
+function parseParams(s) {
+  const b=parseBody(s); return [...b.matchAll(/\{\{(\d+)\}\}/g)].map(m=>`Param ${m[1]}`);
+}
+function parseHeader(s) {
+  try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="HEADER")?.format||null; }catch{}return null;
+}
+function parseButtons(s) {
+  try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="BUTTONS")?.buttons?.map(b=>b.text)||[]; }catch{}return [];
+}
+function normalizeTpl(t) {
+  if (t.components) {
+    return { id:t.id, name:t.name, status:t.status, category:t.category,
+      language:t.language, body:parseBody(t.components),
+      params:parseParams(t.components), header:parseHeader(t.components),
+      buttons:parseButtons(t.components) };
+  }
+  return t;
+}
+
 
 const C = {
   g1:"#25d366", g2:"#1aad52", teal:"#00c9d4", blue:"#2979ff",
@@ -48,7 +71,20 @@ export default function BulkSend() {
   const [toast,    setToast]    = useState(null);
   const fileRef = useRef();
 
-  const approved   = TEMPLATES.filter(t => t.status === "APPROVED");
+  const [allTemplates, setAllTemplates] = useState([]);
+  const [tplLoading,   setTplLoading]   = useState(true);
+
+  useEffect(() => {
+    fetch("/api/templates")
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.templates?.length) setAllTemplates(d.templates.map(normalizeTpl));
+        setTplLoading(false);
+      })
+      .catch(()=>setTplLoading(false));
+  }, []);
+
+  const approved   = allTemplates.filter(t => t.status === "APPROVED");
   const tpl        = approved.find(t => t.id === tplId);
   const hasHeader  = tpl?.header && ["IMAGE","DOCUMENT","VIDEO"].includes(String(tpl.header));
   const headerFmt  = hasHeader ? String(tpl.header) : null;
@@ -182,9 +218,16 @@ export default function BulkSend() {
       {/* STEP 0 — Pick template */}
       {step===0&&(
         <div>
-          <p style={{fontSize:13,color:C.txs,marginBottom:16}}>
+          {tplLoading && (
+        <div style={{textAlign:"center",padding:40,color:C.txd}}>
+          <div style={{width:28,height:28,margin:"0 auto 10px",border:`3px solid ${C.border}`,
+            borderTopColor:C.g1,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
+          <p style={{fontSize:13}}>Loading templates from Flaxxa…</p>
+        </div>
+      )}
+      {!tplLoading && <p style={{fontSize:13,color:C.txs,marginBottom:16}}>
             Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
-          </p>
+          </p>}
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {approved.map(t=>(
               <div key={t.id} onClick={()=>setTplId(t.id)} style={{
