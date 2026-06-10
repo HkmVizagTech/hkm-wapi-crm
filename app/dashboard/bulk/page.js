@@ -81,6 +81,12 @@ export default function BulkSend() {
   const startBulk = async () => {
     setSending(true); setStep(3);
 
+    // Validate image URL
+    if (hasHeader && mediaUrl && mediaUrl.startsWith("data:")) {
+      showToast("Please upload the image to Media Library first to get a Cloudinary URL","error");
+      setSending(false); setStep(2); return;
+    }
+
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
       scheduledAt = new Date(`${schedDate}T${schedTime}`).toISOString();
@@ -100,58 +106,41 @@ export default function BulkSend() {
           name:         campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
           templateName: tpl.name,
           templateLang: tpl.language || "en",
-          contacts, delay, mediaUrl, headerFormat:headerFmt, scheduledAt,
+          contacts, delay,
+          mediaUrl:     mediaUrl?.startsWith("http") ? mediaUrl : "",
+          headerFormat: headerFmt,
+          scheduledAt,
         }),
       });
 
+      const d = await r.json().catch(()=>({}));
+
       if (!r.ok) {
-        const errData = await r.json().catch(()=>({}));
-        showToast(errData.error||"Request failed","error");
+        showToast(d.error||"Request failed. Check Railway logs.","error");
         setSending(false); setStep(2); return;
       }
 
-      if (scheduledAt && new Date(scheduledAt) > new Date()) {
+      if (d.status==="scheduled") {
         showToast(`Scheduled for ${schedDate} ${schedTime}`);
         setSending(false); return;
       }
 
-      // Read streaming response
-      const reader  = r.body.getReader();
-      const decoder = new TextDecoder();
-      let   buffer  = "";
-      let   lSent=0, lFailed=0, lResults=[];
-
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, {stream:true});
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.type==="init") {
-              setCampId(msg.campaignId);
-            } else if (msg.type==="progress") {
-              lSent=msg.sent; lFailed=msg.failed;
-              if (msg.result) lResults=[...lResults,msg.result];
-              setCampData({status:"running",totalContacts:msg.total,
-                sent:msg.sent,failed:msg.failed,results:lResults});
-            } else if (msg.type==="done") {
-              setCampData({status:"done",totalContacts:msg.total,
-                sent:msg.sent,failed:msg.failed,results:lResults});
-              setSending(false);
-              showToast(`Done! ${msg.sent} sent, ${msg.failed} failed`,
-                msg.failed>0?"warning":"success");
-            }
-          } catch {}
-        }
-      }
+      // Done — show results
+      setCampData({
+        status:        "done",
+        totalContacts: d.total,
+        sent:          d.sent,
+        failed:        d.failed,
+        results:       d.results||[],
+      });
+      setSending(false);
+      showToast(
+        `Done! ${d.sent} sent, ${d.failed} failed`,
+        d.failed > 0 ? "warning" : "success"
+      );
 
     } catch(e) {
-      showToast("Error: "+e.message,"error");
+      showToast("Network error: "+e.message,"error");
       setSending(false); setStep(2);
     }
   };
@@ -278,6 +267,17 @@ export default function BulkSend() {
                     headerFmt==="DOCUMENT" ? "https://example.com/receipt.pdf" :
                     "https://example.com/video.mp4"
                   }/>
+              {mediaUrl && mediaUrl.startsWith("data:") && (
+                <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
+                  background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
+                  color:"#f44336",fontSize:12,fontWeight:600}}>
+                  ✕ This is a local file (base64). Please upload it to{" "}
+                  <a href="/dashboard/media" target="_blank" style={{color:"#f44336"}}>
+                    Media Library
+                  </a>{" "}
+                  first to get a Cloudinary URL.
+                </div>
+              )}
               </div>
               {headerFmt==="IMAGE"&&mediaUrl&&(
                 <div style={{borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`,
