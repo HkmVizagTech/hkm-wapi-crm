@@ -112,12 +112,16 @@ export default function BulkSend() {
         setSending(false);
       } else {
         // Poll campaign progress
-        const poll = setInterval(async () => {
-          const pr  = await fetch(`/api/campaigns/${d.campaignId}`);
-          const pd  = await pr.json();
+        // Poll every 2 seconds immediately
+      let pollCount = 0;
+      const poll = setInterval(async () => {
+        pollCount++;
+        try {
+          const pr = await fetch(`/api/campaigns/${d.campaignId}`);
+          const pd = await pr.json();
           if (pd.campaign) {
             setCampData(pd.campaign);
-            if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
+            if (pd.campaign.status==="done" || pd.campaign.status==="stopped") {
               clearInterval(poll);
               setSending(false);
               showToast(
@@ -126,7 +130,10 @@ export default function BulkSend() {
               );
             }
           }
-        }, 2500);
+          // Stop polling after 30 min (900 polls × 2s)
+          if (pollCount > 900) { clearInterval(poll); setSending(false); }
+        } catch(e) { console.error("Poll error:", e); }
+      }, 2000);
       }
     } else {
       showToast(d.error || "Failed", "error");
