@@ -15,6 +15,19 @@ const avc  = s => AVC[(s||"A").charCodeAt(0) % AVC.length];
 
 function Avatar({ name, size=40 }) {
   const c = avc(name||"?");
+  // For phone numbers starting with country code, show last 2 meaningful chars
+  const initials = (() => {
+    const n = name || "?";
+    // If it looks like a phone number (all digits), show last 2 digits
+    if (/^[+\d\s]+$/.test(n.trim())) {
+      const digits = n.replace(/\D/g,"");
+      return digits.slice(-2);
+    }
+    // For names, use first 2 chars
+    const words = n.trim().split(/\s+/);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return n.slice(0,2).toUpperCase();
+  })();
   return (
     <div style={{
       width:size, height:size, borderRadius:"50%", flexShrink:0,
@@ -22,7 +35,7 @@ function Avatar({ name, size=40 }) {
       display:"flex", alignItems:"center", justifyContent:"center",
       fontSize:size*.34, fontWeight:800, color:c,
     }}>
-      {(name||"?").slice(0,2).toUpperCase()}
+      {initials}
     </div>
   );
 }
@@ -91,7 +104,7 @@ function ComposeSheet({ contact, token, onSent, onClose }) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:100,
+    <div style={{position:"fixed",inset:0,zIndex:200,
       display:"flex",flexDirection:"column",justifyContent:"flex-end",
       background:"rgba(0,0,0,.7)"}}>
       <div style={{background:C.card,borderRadius:"20px 20px 0 0",
@@ -287,8 +300,12 @@ export default function Inbox() {
 
   /* ── Chat View ── */
   if (selected) return (
-    <div style={{display:"flex",flexDirection:"column",
-      height:"100%",background:C.waBg}}>
+    <div style={{
+      display:"flex", flexDirection:"column",
+      height:"100%", background:C.waBg,
+      // On mobile: take full viewport over the bottom nav
+      position:"fixed", inset:0, zIndex:40,
+    }}>
       {/* Chat header */}
       <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,
         padding:"10px 14px",display:"flex",alignItems:"center",
