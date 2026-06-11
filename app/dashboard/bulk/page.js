@@ -73,6 +73,8 @@ export default function BulkSend() {
 
   const [allTemplates, setAllTemplates] = useState([]);
   const [tplLoading,   setTplLoading]   = useState(true);
+  const [catFilter,    setCatFilter]    = useState("ALL");
+  const [tplSearch,    setTplSearch]    = useState("");
 
   useEffect(() => {
     fetch("/api/templates")
@@ -84,7 +86,12 @@ export default function BulkSend() {
       .catch(()=>setTplLoading(false));
   }, []);
 
-  const approved   = allTemplates.filter(t => t.status === "APPROVED");
+  const cats     = ["ALL", ...new Set(allTemplates.filter(t=>t.status==="APPROVED").map(t=>t.category).filter(Boolean))];
+  const approved = allTemplates.filter(t =>
+    t.status === "APPROVED" &&
+    (catFilter === "ALL" || t.category === catFilter) &&
+    (!tplSearch || t.name?.toLowerCase().includes(tplSearch.toLowerCase()))
+  );
   const tpl        = approved.find(t => t.id === tplId);
   const hasHeader  = tpl?.header && ["IMAGE","DOCUMENT","VIDEO"].includes(String(tpl.header));
   const headerFmt  = hasHeader ? String(tpl.header) : null;
@@ -252,9 +259,32 @@ export default function BulkSend() {
           <p style={{fontSize:13}}>Loading templates from Flaxxa…</p>
         </div>
       )}
-      {!tplLoading && <p style={{fontSize:13,color:C.txs,marginBottom:16}}>
-            Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
-          </p>}
+      {!tplLoading && <>
+        <p style={{fontSize:13,color:C.txs,marginBottom:12}}>
+          Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
+        </p>
+        <input style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
+          borderRadius:10,padding:"9px 13px",color:C.tx,fontSize:13,outline:"none",
+          boxSizing:"border-box",marginBottom:10}}
+          placeholder="🔍 Search templates…"
+          value={tplSearch} onChange={e=>setTplSearch(e.target.value)}/>
+        <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4,marginBottom:14}}>
+          {cats.map(c=>(
+            <button key={c} onClick={()=>setCatFilter(c)} style={{
+              padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,
+              background:catFilter===c?C.g1:C.surf,
+              color:catFilter===c?"#000":C.txs,
+              fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              {c}
+            </button>
+          ))}
+        </div>
+        {approved.length===0&&(
+          <p style={{textAlign:"center",color:C.txd,padding:20,fontSize:13}}>
+            No templates match
+          </p>
+        )}
+      </>}
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {approved.map(t=>(
               <div key={t.id} onClick={()=>setTplId(t.id)} style={{
