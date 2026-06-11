@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Message          from "@/models/Message";
 import Contact          from "@/models/Contact";
+import Campaign         from "@/models/Campaign";
 
 /* ── GET — Meta webhook verification ── */
 export async function GET(req) {
@@ -10,103 +11,122 @@ export async function GET(req) {
   const mode      = searchParams.get("hub.mode");
   const token     = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
-
-  const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || "hkm_vizag_webhook_2025";
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified ✅");
-    return new Response(challenge, { status: 200 });
+  const VERIFY    = process.env.WEBHOOK_VERIFY_TOKEN || "hkm_vizag_webhook_2025";
+  if (mode === "subscribe" && token === VERIFY) {
+    return new Response(challenge, { status:200 });
   }
-  return new Response("Forbidden", { status: 403 });
+  return new Response("Forbidden", { status:403 });
 }
 
-/* ── POST — Incoming messages from Meta ── */
+/* ── POST — Incoming messages + delivery status ── */
 export async function POST(req) {
   try {
     await connectDB();
     const body = await req.json();
 
-    // Meta sends messages inside entry[].changes[].value
-    const entries = body?.entry || [];
-    for (const entry of entries) {
-      const changes = entry?.changes || [];
-      for (const change of changes) {
+    for (const entry of (body?.entry||[])) {
+      for (const change of (entry?.changes||[])) {
         const value = change?.value;
         if (!value) continue;
 
-        // ── Incoming messages ──────────────────────────
-        const messages = value?.messages || [];
-        for (const msg of messages) {
-          const phone   = msg.from;
-          const wamid   = msg.id;
-          const type    = msg.type; // text, image, document, audio, etc
+        /* ── Incoming messages ── */
+        for (const msg of (value?.messages||[])) {
+          const phone     = msg.from;
+          const wamid     = msg.id;
+          const type      = msg.type;
           const timestamp = new Date(parseInt(msg.timestamp) * 1000);
 
-          // Extract body text
-          let body_text = "";
-          if (type === "text")       body_text = msg.text?.body || "";
-          else if (type === "image") body_text = msg.image?.caption || "[Image]";
-          else if (type === "document") body_text = msg.document?.filename || "[Document]";
-          else if (type === "audio") body_text = "[Audio]";
-          else if (type === "video") body_text = "[Video]";
-          else if (type === "location") body_text = `[Location: ${msg.location?.latitude},${msg.location?.longitude}]`;
-          else if (type === "button") body_text = msg.button?.text || "[Button Reply]";
-          else body_text = `[${type}]`;
+          let bodyText = "";
+          if      (type==="text")     bodyText = msg.text?.body||"";
+          else if (type==="image")    bodyText = msg.image?.caption||"[Image]";
+          else if (type==="document") bodyText = msg.document?.filename||"[Document]";
+          else if (type==="audio")    bodyText = "[Audio]";
+          else if (type==="video")    bodyText = "[Video]";
+          else if (type==="button")   bodyText = msg.button?.text||"[Button Reply]";
+          else                        bodyText = `[${type}]`;
 
-          // Get contact name from contacts array
-          const contactInfo = value?.contacts?.find(c => c.wa_id === phone);
-          const contactName = contactInfo?.profile?.name || phone;
+          const contactName = value?.contacts?.find(c=>c.wa_id===phone)?.profile?.name || phone;
 
-          // Save message to DB
           await Message.findOneAndUpdate(
             { wamid },
-            {
-              $setOnInsert: {
-                contactPhone: phone,
-                contactName,
-                direction:    "inbound",
-                type,
-                body:         body_text,
-                status:       "received",
-                wamid,
-                sentAt:       timestamp,
-              }
-            },
-            { upsert: true }
+            { $setOnInsert: {
+              contactPhone:phone, contactName,
+              direction:"inbound", type, body:bodyText,
+              status:"received", wamid, sentAt:timestamp,
+            }},
+            { upsert:true }
           );
 
-          // Update or create contact
           await Contact.findOneAndUpdate(
             { phone },
-            {
-              $set:         { lastMessageAt: timestamp, name: contactName },
-              $setOnInsert: { phone, name: contactName, addedAt: new Date() },
-              $inc:         { totalMessagesSent: 0 },
-            },
-            { upsert: true }
+            { $set:{ lastMessageAt:timestamp, name:contactName },
+              $setOnInsert:{ phone, name:contactName, addedAt:new Date() } },
+            { upsert:true }
           );
         }
 
-        // ── Delivery / read status updates ────────────
-        const statuses = value?.statuses || [];
-        for (const s of statuses) {
-          const statusMap = { sent:"sent", delivered:"delivered", read:"read", failed:"failed" };
-          const newStatus = statusMap[s.status];
-          if (newStatus && s.id) {
-            await Message.findOneAndUpdate(
-              { wamid: s.id },
-              { $set: { status: newStatus,
-                ...(newStatus==="delivered" ? { deliveredAt: new Date(parseInt(s.timestamp)*1000) } : {}),
-                ...(newStatus==="read"      ? { readAt:       new Date(parseInt(s.timestamp)*1000) } : {}),
-              }}
-            );
+        /* ── Delivery / read status updates ── */
+        for (const s of (value?.statuses||[])) {
+          const wamid     = s.id;
+          const newStatus = { sent:"sent", delivered:"delivered", read:"read", failed:"failed" }[s.status];
+          if (!newStatus || !wamid) continue;
+
+          const timestamp = new Date(parseInt(s.timestamp) * 1000);
+
+          // Update message record
+          const msg = await Message.findOneAndUpdate(
+            { wamid },
+            { $set: {
+              status: newStatus,
+              ...(newStatus==="delivered" ? { deliveredAt:timestamp } : {}),
+              ...(newStatus==="read"      ? { readAt:timestamp }      : {}),
+            }},
+            { new:true }
+          );
+
+          // Update campaign result if this message belongs to a campaign
+          if (newStatus==="delivered" || newStatus==="read") {
+            // Find campaign that has this wamid in its results
+            const campaign = await Campaign.findOne({ "results.wamid": wamid });
+            if (campaign) {
+              const idx = campaign.results.findIndex(r => r.wamid === wamid);
+              if (idx > -1) {
+                const oldStatus = campaign.results[idx].status;
+                const update = { $set: { [`results.${idx}.status`]: newStatus } };
+
+                // Only increment delivered if not already delivered/read
+                if (newStatus==="delivered" && oldStatus==="sent") {
+                  update.$inc = { delivered:1 };
+                } else if (newStatus==="read") {
+                  if (oldStatus==="sent")      update.$inc = { delivered:1, read:1 };
+                  if (oldStatus==="delivered") update.$inc = { read:1 };
+                }
+
+                await Campaign.findByIdAndUpdate(campaign._id, update);
+              }
+            }
+          }
+
+          // Handle failed status
+          if (newStatus==="failed") {
+            const campaign = await Campaign.findOne({ "results.wamid": wamid });
+            if (campaign) {
+              const idx = campaign.results.findIndex(r => r.wamid === wamid);
+              if (idx > -1) {
+                const oldStatus = campaign.results[idx].status;
+                const update = { $set: { [`results.${idx}.status`]: "failed" } };
+                if (oldStatus==="sent") update.$inc = { sent:-1, failed:1 };
+                await Campaign.findByIdAndUpdate(campaign._id, update);
+              }
+            }
           }
         }
       }
     }
-    return NextResponse.json({ ok: true });
+
+    return NextResponse.json({ ok:true });
   } catch(e) {
     console.error("Webhook error:", e.message);
-    return NextResponse.json({ ok: true }); // always return 200 to Meta
+    return NextResponse.json({ ok:true }); // always 200 to Meta
   }
 }

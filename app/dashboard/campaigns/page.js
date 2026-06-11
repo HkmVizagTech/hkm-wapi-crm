@@ -57,6 +57,14 @@ export default function Campaigns() {
     });
   };
 
+  const [recalcing, setRecalcing] = useState(false);
+  const recalculate = async () => {
+    setRecalcing(true);
+    await fetch("/api/campaigns/recalculate", { method:"POST" });
+    await load();
+    setRecalcing(false);
+  };
+
   useEffect(()=>{ load(); }, []);
 
   const statuses = ["ALL","done","running","scheduled","stopped"];
@@ -81,6 +89,11 @@ export default function Campaigns() {
           <p style={{fontSize:13,color:C.txs,marginTop:2}}>{campaigns.length} total campaigns</p>
         </div>
         <div style={{display:"flex",gap:10}}>
+          <button onClick={recalculate} disabled={recalcing} style={{padding:"8px 14px",
+            borderRadius:9,border:`1px solid ${C.border}`,background:"transparent",
+            color:recalcing?C.txd:C.teal,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            {recalcing?"⏳ Recalculating…":"⟳ Recalculate Metrics"}
+          </button>
           <button onClick={load} style={{padding:"8px 14px",borderRadius:9,
             border:`1px solid ${C.border}`,background:"transparent",
             color:C.txs,fontSize:13,fontWeight:700,cursor:"pointer"}}>
