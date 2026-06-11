@@ -2,7 +2,26 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-body { font-family: 'Plus Jakarta Sans', sans-serif; background:#07090f; color:#e8edf5; }
-::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1c2a3f;border-radius:2px}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes pdot{0%,100%{opacity:1}50%{opacity:.3}}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #07090f;
+  color: #e8edf5;
+  overscroll-behavior: none;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1c2a3f; border-radius: 2px; }
+input, textarea, select, button { font-family: 'Plus Jakarta Sans', sans-serif; }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #25d366 !important;
+}
+button { cursor: pointer; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+@keyframes spin  { to { transform: rotate(360deg); } }
+@keyframes pdot  { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes fadeUp{ from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
