@@ -61,17 +61,35 @@ export async function POST(req) {
       },{status:400});
     }
 
+    // Deduplicate contacts by phone number — keep first occurrence
+    const seen    = new Set();
+    const unique  = [];
+    const dupes   = [];
+    for (const c of contacts) {
+      const phone = String(c.phone).trim().replace(/^\+/,"");
+      if (seen.has(phone)) {
+        dupes.push(phone);
+      } else {
+        seen.add(phone);
+        unique.push({ ...c, phone });
+      }
+    }
+    if (dupes.length > 0) {
+      console.log(`Removed ${dupes.length} duplicate phone numbers:`, dupes);
+    }
+    const dedupedContacts = unique;
+
     // Create campaign
     const campaign = await Campaign.create({
       name:          name || `Bulk ${templateName} ${new Date().toLocaleDateString()}`,
       templateName, templateLang,
       mediaUrl:      mediaUrl?.startsWith("http") ? mediaUrl : "",
       headerFormat,
-      totalContacts: contacts.length,
+      totalContacts: dedupedContacts.length,
       delay,
       scheduledAt:   scheduledAt ? new Date(scheduledAt) : null,
       status:        scheduledAt && new Date(scheduledAt)>new Date() ? "scheduled" : "running",
-      results:       contacts.map(c=>({phone:c.phone,name:c.name,params:c.params||[],status:"pending"})),
+      results:       dedupedContacts.map(c=>({phone:c.phone,name:c.name,params:c.params||[],status:"pending"})),
     });
 
     const campaignId = campaign._id.toString();
@@ -85,8 +103,8 @@ export async function POST(req) {
     const results = [];
     let sent=0, failed=0;
 
-    for (let i=0; i<contacts.length; i++) {
-      const c = contacts[i];
+    for (let i=0; i<dedupedContacts.length; i++) {
+      const c = dedupedContacts[i];
       try {
         const {ok,wamid,error} = await sendTemplate(
           c.phone, templateName, templateLang,
@@ -114,7 +132,7 @@ export async function POST(req) {
       }
 
       // Delay between sends (skip after last)
-      if (i < contacts.length-1) {
+      if (i < dedupedContacts.length-1) {
         await new Promise(r=>setTimeout(r, Math.max(delay,500)));
       }
     }

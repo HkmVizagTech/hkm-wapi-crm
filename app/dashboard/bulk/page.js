@@ -107,7 +107,20 @@ export default function BulkSend() {
         const { headers, rows } = parseCSV(ev.target.result);
         if (!headers.includes("phone")) { setCsvErr('CSV must have a "phone" column'); return; }
         if (!rows.length) { setCsvErr("No data rows found"); return; }
-        setCsvRows(rows.filter(r => r.phone?.trim()));
+        const validRows = rows.filter(r => r.phone?.trim());
+        // Deduplicate — keep first occurrence of each phone
+        const seen = new Set();
+        const unique = [];
+        let dupeCount = 0;
+        for (const r of validRows) {
+          const phone = r.phone.trim().replace(/^\+/,"");
+          if (seen.has(phone)) { dupeCount++; }
+          else { seen.add(phone); unique.push(r); }
+        }
+        if (dupeCount > 0) {
+          setCsvErr(`Found ${dupeCount} duplicate phone number(s) — removed automatically. ${unique.length} unique contacts will be sent.`);
+        }
+        setCsvRows(unique);
         setStep(2);
       } catch(err) { setCsvErr("Parse error: " + err.message); }
     };
@@ -128,11 +141,25 @@ export default function BulkSend() {
       scheduledAt = new Date(`${schedDate}T${schedTime}`).toISOString();
     }
 
-    const contacts = csvRows.map(r => ({
-      phone:  r.phone.trim().replace(/^\+/,""),
-      name:   r.name || r.phone,
-      params: getParams(r),
-    }));
+    // Build contacts and deduplicate by phone number
+    const seen = new Set();
+    const contacts = csvRows
+      .map(r => ({
+        phone:  r.phone.trim().replace(/^\+/,"").replace(/\s/g,""),
+        name:   r.name || r.phone,
+        params: getParams(r),
+      }))
+      .filter(c => {
+        if (!c.phone) return false;       // skip empty
+        if (seen.has(c.phone)) return false; // skip duplicate
+        seen.add(c.phone);
+        return true;
+      });
+
+    const duplicatesRemoved = csvRows.length - contacts.length;
+    if (duplicatesRemoved > 0) {
+      showToast(`${duplicatesRemoved} duplicate number${duplicatesRemoved>1?"s":""} removed`, "warning");
+    }
 
     try {
       const r = await fetch("/api/messages/bulk", {
