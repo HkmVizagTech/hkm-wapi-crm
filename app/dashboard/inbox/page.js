@@ -281,6 +281,25 @@ export default function Inbox() {
     loadConvos();
   };
 
+  const [checking, setChecking] = useState(false);
+
+  const checkStatus = async () => {
+    if (!selected) return;
+    setChecking(true);
+    try {
+      const r = await fetch(`/api/messages/status?phone=${encodeURIComponent(selected.phone)}`);
+      const d = await r.json();
+      if (d.messages?.length) {
+        // Merge updated statuses into messages
+        setMessages(prev => prev.map(m => {
+          const updated = d.messages.find(u => u._id?.toString() === m._id?.toString());
+          return updated ? { ...m, status: updated.status } : m;
+        }));
+      }
+    } catch {}
+    setChecking(false);
+  };
+
   const goBack = () => {
     setSelected(null);
     clearInterval(msgPoll.current);
@@ -322,12 +341,20 @@ export default function Inbox() {
             {selected.phone}
           </div>
         </div>
-        <button onClick={()=>setCompose(true)}
-          style={{padding:"8px 14px",borderRadius:20,border:"none",
-            background:`linear-gradient(135deg,${C.g1},${C.g2})`,
-            color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0}}>
-          ✉ Reply
-        </button>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick={checkStatus} disabled={checking}
+            style={{padding:"7px 10px",borderRadius:20,border:`1px solid ${C.border}`,
+              background:"transparent",color:checking?C.txd:C.teal,
+              fontWeight:700,fontSize:12,cursor:"pointer"}}>
+            {checking?"⏳":"↻"}
+          </button>
+          <button onClick={()=>setCompose(true)}
+            style={{padding:"8px 14px",borderRadius:20,border:"none",
+              background:`linear-gradient(135deg,${C.g1},${C.g2})`,
+              color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+            ✉ Reply
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -408,14 +435,22 @@ export default function Inbox() {
                   }}>{m.body}</p>
                   {/* Time + status */}
                   <div style={{display:"flex",alignItems:"center",
-                    justifyContent:"flex-end",gap:4,marginTop:3}}>
-                    <span style={{fontSize:10,
-                      color:isOut?"rgba(0,0,0,.45)":C.txd}}>
+                    justifyContent:"flex-end",gap:5,marginTop:4}}>
+                    <span style={{fontSize:11,
+                      color:isOut?"rgba(0,0,0,.5)":C.txd}}>
                       {timeStr}
                     </span>
                     {isOut && (
-                      <span style={{fontSize:12,color:statusColor(m.status)}}>
-                        {statusIcon(m.status)}
+                      <span style={{
+                        display:"inline-flex",alignItems:"center",gap:3,
+                        fontSize:11,fontWeight:700,
+                        color:statusColor(m.status),
+                      }}>
+                        {m.status==="read"      && <span title="Read">👁 Read</span>}
+                        {m.status==="delivered" && <span title="Delivered">✓✓ Delivered</span>}
+                        {m.status==="sent"      && <span title="Sent">✓ Sent</span>}
+                        {m.status==="failed"    && <span title="Failed">✕ Failed</span>}
+                        {m.status==="pending"   && <span title="Pending">⏳</span>}
                       </span>
                     )}
                   </div>
