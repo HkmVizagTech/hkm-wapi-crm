@@ -22,6 +22,12 @@ export default function Campaigns() {
 
   useEffect(()=>{ load(); },[]);
 
+  const cancelCampaign = async (id) => {
+    if (!confirm("Cancel this scheduled campaign?")) return;
+    await fetch(`/api/campaigns/${id}`, { method:"DELETE" });
+    load();
+  };
+
   const recalculate = async () => {
     setRecalcing(true);
     await fetch("/api/campaigns/recalculate",{method:"POST"});
@@ -96,6 +102,38 @@ export default function Campaigns() {
           </button>
         ))}
       </div>
+
+      {/* Scheduled campaigns highlight */}
+      {!loading && campaigns.filter(c=>c.status==="scheduled").length > 0 && (
+        <div style={{background:"rgba(156,39,176,.08)",border:"1px solid rgba(156,39,176,.3)",
+          borderRadius:12,padding:14,marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:14,color:"#ce93d8",marginBottom:10}}>
+            ⏰ Scheduled Campaigns ({campaigns.filter(c=>c.status==="scheduled").length})
+          </div>
+          {campaigns.filter(c=>c.status==="scheduled").map(c=>(
+            <div key={c._id} style={{display:"flex",justifyContent:"space-between",
+              alignItems:"center",padding:"10px 12px",borderRadius:10,
+              background:"rgba(156,39,176,.1)",marginBottom:8,
+              border:"1px solid rgba(156,39,176,.2)"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.tx,overflow:"hidden",
+                  textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                <div style={{fontSize:12,color:"#ce93d8",marginTop:2}}>
+                  📅 {new Date(c.scheduledAt).toLocaleString("en-IN",
+                    {dateStyle:"medium",timeStyle:"short"})}
+                </div>
+                <div style={{fontSize:11,color:C.txs}}>{c.totalContacts} contacts · {c.templateName}</div>
+              </div>
+              <button onClick={()=>cancelCampaign(c._id)}
+                style={{padding:"6px 12px",borderRadius:8,border:"1px solid rgba(244,67,54,.4)",
+                  background:"rgba(244,67,54,.1)",color:"#f44336",
+                  fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:10}}>
+                ✕ Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Campaign cards */}
       {loading?(

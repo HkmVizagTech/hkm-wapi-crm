@@ -1,8 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  images: { domains: ["res.cloudinary.com"] },
+  // Enable instrumentation hook for scheduler
   experimental: {
-    serverComponentsExternalPackages: ["mongoose","bull","ioredis","cloudinary"],
+    instrumentationHook: true,
+    serverComponentsExternalPackages: ["mongoose","cloudinary","node-cron"],
+  },
+  images: {
+    domains: ["res.cloudinary.com"],
   },
 };
 module.exports = nextConfig;
