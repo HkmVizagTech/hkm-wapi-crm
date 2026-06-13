@@ -5,6 +5,8 @@ const S = new mongoose.Schema({
   direction:    { type:String, enum:["outbound","inbound"], default:"outbound" },
   type:         { type:String, default:"text" },
   body:         String,
+  mediaUrl:     String,
+  mimeType:     String,
   templateName: String,
   params:       [String],
   status:       { type:String, enum:["sent","delivered","read","failed","received"], default:"sent" },

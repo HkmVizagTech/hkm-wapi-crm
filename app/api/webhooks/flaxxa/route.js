@@ -5,7 +5,6 @@ import Message          from "@/models/Message";
 import Contact          from "@/models/Contact";
 import Campaign         from "@/models/Campaign";
 
-/* ── GET — Meta webhook verification ── */
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const mode      = searchParams.get("hub.mode");
@@ -18,7 +17,6 @@ export async function GET(req) {
   return new Response("Forbidden", { status:403 });
 }
 
-/* ── POST — Incoming messages + delivery status ── */
 export async function POST(req) {
   try {
     await connectDB();
@@ -37,22 +35,72 @@ export async function POST(req) {
           const timestamp = new Date(parseInt(msg.timestamp) * 1000);
 
           let bodyText = "";
-          if      (type==="text")     bodyText = msg.text?.body||"";
-          else if (type==="image")    bodyText = msg.image?.caption||"[Image]";
-          else if (type==="document") bodyText = msg.document?.filename||"[Document]";
-          else if (type==="audio")    bodyText = "[Audio]";
-          else if (type==="video")    bodyText = "[Video]";
-          else if (type==="button")   bodyText = msg.button?.text||"[Button Reply]";
-          else                        bodyText = `[${type}]`;
+          let mediaUrl = "";
+          let mimeType = "";
+
+          switch(type) {
+            case "text":
+              bodyText = msg.text?.body || "";
+              break;
+            case "image":
+              bodyText = msg.image?.caption || "";
+              mediaUrl = msg.image?.url || msg.image?.link || "";
+              mimeType = msg.image?.mime_type || "image/jpeg";
+              if (!bodyText) bodyText = "📷 Photo";
+              break;
+            case "video":
+              bodyText = msg.video?.caption || "";
+              mediaUrl = msg.video?.url || msg.video?.link || "";
+              mimeType = msg.video?.mime_type || "video/mp4";
+              if (!bodyText) bodyText = "🎥 Video";
+              break;
+            case "audio":
+              bodyText = "🎵 Voice message";
+              mediaUrl = msg.audio?.url || msg.audio?.link || "";
+              mimeType = msg.audio?.mime_type || "audio/ogg";
+              break;
+            case "document":
+              bodyText = msg.document?.filename || "📄 Document";
+              mediaUrl = msg.document?.url || msg.document?.link || "";
+              mimeType = msg.document?.mime_type || "application/pdf";
+              break;
+            case "sticker":
+              bodyText = "🎉 Sticker";
+              mediaUrl = msg.sticker?.url || "";
+              break;
+            case "location":
+              bodyText = `📍 Location: ${msg.location?.name||""} (${msg.location?.latitude}, ${msg.location?.longitude})`;
+              break;
+            case "contacts":
+              bodyText = `👤 Contact: ${msg.contacts?.[0]?.name?.formatted_name || "Contact shared"}`;
+              break;
+            case "button":
+              bodyText = msg.button?.text || "[Button Reply]";
+              break;
+            case "interactive":
+              bodyText = msg.interactive?.button_reply?.title ||
+                         msg.interactive?.list_reply?.title ||
+                         "[Interactive Reply]";
+              break;
+            default:
+              bodyText = `[${type}]`;
+          }
 
           const contactName = value?.contacts?.find(c=>c.wa_id===phone)?.profile?.name || phone;
 
           await Message.findOneAndUpdate(
             { wamid },
             { $setOnInsert: {
-              contactPhone:phone, contactName,
-              direction:"inbound", type, body:bodyText,
-              status:"received", wamid, sentAt:timestamp,
+              contactPhone: phone,
+              contactName,
+              direction:    "inbound",
+              type,
+              body:         bodyText,
+              mediaUrl,
+              mimeType,
+              status:       "received",
+              wamid,
+              sentAt:       timestamp,
             }},
             { upsert:true }
           );
@@ -68,54 +116,33 @@ export async function POST(req) {
         /* ── Delivery / read status updates ── */
         for (const s of (value?.statuses||[])) {
           const wamid     = s.id;
-          const newStatus = { sent:"sent", delivered:"delivered", read:"read", failed:"failed" }[s.status];
+          const newStatus = {sent:"sent",delivered:"delivered",read:"read",failed:"failed"}[s.status];
           if (!newStatus || !wamid) continue;
 
           const timestamp = new Date(parseInt(s.timestamp) * 1000);
 
-          // Update message record
-          const msg = await Message.findOneAndUpdate(
+          await Message.findOneAndUpdate(
             { wamid },
             { $set: {
               status: newStatus,
               ...(newStatus==="delivered" ? { deliveredAt:timestamp } : {}),
               ...(newStatus==="read"      ? { readAt:timestamp }      : {}),
-            }},
-            { new:true }
+            }}
           );
 
-          // Update campaign result if this message belongs to a campaign
           if (newStatus==="delivered" || newStatus==="read") {
-            // Find campaign that has this wamid in its results
-            const campaign = await Campaign.findOne({ "results.wamid": wamid });
+            const campaign = await Campaign.findOne({"results.wamid":wamid});
             if (campaign) {
-              const idx = campaign.results.findIndex(r => r.wamid === wamid);
+              const idx = campaign.results.findIndex(r=>r.wamid===wamid);
               if (idx > -1) {
                 const oldStatus = campaign.results[idx].status;
-                const update = { $set: { [`results.${idx}.status`]: newStatus } };
-
-                // Only increment delivered if not already delivered/read
-                if (newStatus==="delivered" && oldStatus==="sent") {
-                  update.$inc = { delivered:1 };
-                } else if (newStatus==="read") {
-                  if (oldStatus==="sent")      update.$inc = { delivered:1, read:1 };
-                  if (oldStatus==="delivered") update.$inc = { read:1 };
+                const update = {$set:{[`results.${idx}.status`]:newStatus}};
+                if (newStatus==="delivered" && oldStatus==="sent")
+                  update.$inc = {delivered:1};
+                else if (newStatus==="read") {
+                  if (oldStatus==="sent")      update.$inc = {delivered:1,read:1};
+                  if (oldStatus==="delivered") update.$inc = {read:1};
                 }
-
-                await Campaign.findByIdAndUpdate(campaign._id, update);
-              }
-            }
-          }
-
-          // Handle failed status
-          if (newStatus==="failed") {
-            const campaign = await Campaign.findOne({ "results.wamid": wamid });
-            if (campaign) {
-              const idx = campaign.results.findIndex(r => r.wamid === wamid);
-              if (idx > -1) {
-                const oldStatus = campaign.results[idx].status;
-                const update = { $set: { [`results.${idx}.status`]: "failed" } };
-                if (oldStatus==="sent") update.$inc = { sent:-1, failed:1 };
                 await Campaign.findByIdAndUpdate(campaign._id, update);
               }
             }
@@ -123,10 +150,9 @@ export async function POST(req) {
         }
       }
     }
-
-    return NextResponse.json({ ok:true });
+    return NextResponse.json({ok:true});
   } catch(e) {
     console.error("Webhook error:", e.message);
-    return NextResponse.json({ ok:true }); // always 200 to Meta
+    return NextResponse.json({ok:true});
   }
 }

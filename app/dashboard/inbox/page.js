@@ -420,19 +420,74 @@ export default function Inbox() {
                   border:isOut?"none":`1px solid ${C.border}`,
                   boxShadow:"0 1px 4px rgba(0,0,0,.3)",
                 }}>
-                  {/* Media type label */}
-                  {m.type&&m.type!=="text"&&m.type!=="template"&&(
-                    <div style={{fontSize:10,fontWeight:700,
-                      color:isOut?"rgba(0,0,0,.5)":C.txs,
-                      marginBottom:3,textTransform:"uppercase"}}>
-                      {m.type}
-                    </div>
+                  {/* Image */}
+                  {m.type==="image"&&m.mediaUrl&&(
+                    <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={m.mediaUrl} alt="Photo"
+                        style={{width:"100%",maxWidth:220,borderRadius:8,
+                          display:"block",marginBottom:4,cursor:"pointer"}}
+                        onError={e=>{e.target.style.display="none";}}/>
+                    </a>
                   )}
-                  <p style={{
-                    fontSize:14,lineHeight:1.55,margin:0,
-                    color:isOut?"#000":C.tx,
-                    whiteSpace:"pre-wrap",wordBreak:"break-word",
-                  }}>{m.body}</p>
+                  {/* Video */}
+                  {m.type==="video"&&m.mediaUrl&&(
+                    <video controls style={{width:"100%",maxWidth:220,
+                      borderRadius:8,display:"block",marginBottom:4}}>
+                      <source src={m.mediaUrl} type={m.mimeType||"video/mp4"}/>
+                    </video>
+                  )}
+                  {/* Audio */}
+                  {m.type==="audio"&&m.mediaUrl&&(
+                    <audio controls style={{width:"100%",marginBottom:4,
+                      maxWidth:220,display:"block"}}>
+                      <source src={m.mediaUrl} type={m.mimeType||"audio/ogg"}/>
+                    </audio>
+                  )}
+                  {/* Document */}
+                  {m.type==="document"&&m.mediaUrl&&(
+                    <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer"
+                      style={{display:"flex",alignItems:"center",gap:8,
+                        padding:"8px 10px",borderRadius:8,marginBottom:4,textDecoration:"none",
+                        background:isOut?"rgba(0,0,0,.15)":"rgba(255,255,255,.08)"}}>
+                      <span style={{fontSize:24}}>📄</span>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,
+                          color:isOut?"#000":C.tx}}>
+                          {m.body||"Document"}
+                        </div>
+                        <div style={{fontSize:10,color:isOut?"rgba(0,0,0,.5)":C.txs}}>
+                          Tap to open
+                        </div>
+                      </div>
+                    </a>
+                  )}
+                  {/* Sticker */}
+                  {m.type==="sticker"&&m.mediaUrl&&(
+                    <img src={m.mediaUrl} alt="Sticker"
+                      style={{width:80,height:80,display:"block",marginBottom:4}}
+                      onError={e=>{e.target.style.display="none";}}/>
+                  )}
+                  {/* Text body — show for all types */}
+                  {(m.body && (m.type==="text" || m.type==="button" ||
+                    m.type==="interactive" || m.type==="location" ||
+                    m.type==="contacts" || m.type==="template" ||
+                    (!m.mediaUrl && m.body))) && (
+                    <p style={{
+                      fontSize:14,lineHeight:1.55,margin:0,
+                      color:isOut?"#000":C.tx,
+                      whiteSpace:"pre-wrap",wordBreak:"break-word",
+                    }}>{m.body}</p>
+                  )}
+                  {/* Caption for media with text */}
+                  {m.body && m.mediaUrl &&
+                    (m.type==="image"||m.type==="video") &&
+                    m.body!=="📷 Photo" && m.body!=="🎥 Video" && (
+                    <p style={{fontSize:13,margin:"4px 0 0",
+                      color:isOut?"rgba(0,0,0,.7)":C.txs,
+                      whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                      {m.body}
+                    </p>
+                  )}
                   {/* Time + status */}
                   <div style={{display:"flex",alignItems:"center",
                     justifyContent:"flex-end",gap:5,marginTop:4}}>
@@ -568,7 +623,10 @@ export default function Inbox() {
                   {c.lastDir==="outbound"&&(
                     <span style={{color:C.g1,marginRight:3}}>You:</span>
                   )}
-                  {c.lastMessage||"No messages yet"}
+                  {c.lastMessage==="📷 Photo"    ? "📷 Photo"
+                  :c.lastMessage==="🎥 Video"    ? "🎥 Video"
+                  :c.lastMessage==="🎵 Voice message" ? "🎵 Voice message"
+                  :c.lastMessage||"No messages yet"}
                 </div>
               </div>
               {/* Unread dot */}
