@@ -16,6 +16,7 @@ const S = new mongoose.Schema({
   failed:       { type:Number, default:0 },
   status:       { type:String, enum:["scheduled","queued","running","done","stopped"], default:"queued" },
   delay:        { type:Number, default:1200 },
+  headerFormat: String,
   scheduledAt:  Date,
   results:      [R],
   createdAt:    { type:Date, default:Date.now },
