@@ -31,7 +31,7 @@ async function sendTemplate(phone, templateName, templateLang, params, mediaUrl,
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
       token:             process.env.FLAXXA_TOKEN,
-      phone:             String(phone).replace(/^\+/,""),
+      phone:             normalizePhone(phone),
       template_name:     templateName,
       template_language: templateLang||"en",
       components,
@@ -66,7 +66,7 @@ export async function POST(req) {
     const unique  = [];
     const dupes   = [];
     for (const c of contacts) {
-      const phone = String(c.phone).trim().replace(/^\+/,"");
+      const phone = normalizePhone(c.phone);
       if (seen.has(phone)) {
         dupes.push(phone);
       } else {
