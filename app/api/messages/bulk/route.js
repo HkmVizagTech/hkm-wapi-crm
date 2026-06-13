@@ -6,6 +6,15 @@ import Campaign         from "@/models/Campaign";
 
 const BASE = "https://wapi.flaxxa.com";
 
+function normalizePhone(phone, cc="91") {
+  let p = String(phone).trim().replace(/\s+/g,"").replace(/[-().]/g,"");
+  if (p.startsWith("+"))  p = p.slice(1);
+  if (p.startsWith("00")) p = p.slice(2);
+  if (/^[6-9]\d{9}$/.test(p))  p = cc + p;
+  if (/^0[6-9]\d{9}$/.test(p)) p = cc + p.slice(1);
+  return p;
+}
+
 async function sendTemplate(phone, templateName, templateLang, params, mediaUrl, headerFormat) {
   const components = [];
 
