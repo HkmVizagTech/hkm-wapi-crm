@@ -135,45 +135,29 @@ export default function BulkSend() {
   };
 
   const startBulk = async () => {
-    setSending(true); setStep(3);
-
     // Validate image URL
     if (hasHeader && mediaUrl && mediaUrl.startsWith("data:")) {
-      showToast("Please upload the image to Media Library first to get a Cloudinary URL","error");
+      showToast("Please upload the image to Media Library first","error");
       setSending(false); setStep(2); return;
     }
 
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
-      // Parse as local time (browser timezone)
       const localDt = new Date(`${schedDate}T${schedTime}:00`);
-      scheduledAt = localDt.toISOString();
-      // Must be at least 2 minutes in future
       if (localDt <= new Date(Date.now() + 2*60*1000)) {
         showToast("Schedule time must be at least 2 minutes in the future","error");
         setSending(false); return;
       }
+      scheduledAt = localDt.toISOString();
     }
 
-    // Build contacts and deduplicate by phone number
-    const seen = new Set();
-    const contacts = csvRows
-      .map(r => ({
-        phone:  r.phone.trim().replace(/^\+/,"").replace(/\s/g,""),
-        name:   r.name || r.phone,
-        params: getParams(r),
-      }))
-      .filter(c => {
-        if (!c.phone) return false;       // skip empty
-        if (seen.has(c.phone)) return false; // skip duplicate
-        seen.add(c.phone);
-        return true;
-      });
+    setSending(true); setStep(3);
 
-    const duplicatesRemoved = csvRows.length - contacts.length;
-    if (duplicatesRemoved > 0) {
-      showToast(`${duplicatesRemoved} duplicate number${duplicatesRemoved>1?"s":""} removed`, "warning");
-    }
+    const contacts = csvRows.map(r => ({
+      phone:  normalizePhone(r.phone),
+      name:   r.name || r.phone,
+      params: getParams(r),
+    }));
 
     try {
       const r = await fetch("/api/messages/bulk", {
@@ -193,16 +177,45 @@ export default function BulkSend() {
       const d = await r.json().catch(()=>({}));
 
       if (!r.ok) {
-        showToast(d.error||"Request failed. Check Railway logs.","error");
+        showToast(d.error || "Request failed","error");
         setSending(false); setStep(2); return;
       }
 
-      if (d.status==="scheduled") {
-        showToast(`Scheduled for ${schedDate} ${schedTime}`);
-        setSending(false); return;
+      // Scheduled
+      if (d.status === "scheduled") {
+        setCampData({ status:"scheduled", totalContacts:d.total, sent:0, failed:0, results:[] });
+        setSending(false);
+        showToast(`Scheduled! Will send at ${schedDate} ${schedTime}`);
+        return;
       }
 
-      // Done — show results
+      setCampId(d.campaignId);
+
+      // Large campaign — running in background, poll for progress
+      if (d.status === "running") {
+        showToast(`Campaign started! ${d.total?.toLocaleString()} messages sending in background`);
+        // Poll every 3 seconds
+        const poll = setInterval(async () => {
+          try {
+            const pr = await fetch(`/api/campaigns/${d.campaignId}`);
+            const pd = await pr.json();
+            if (pd.campaign) {
+              setCampData(pd.campaign);
+              if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
+                clearInterval(poll);
+                setSending(false);
+                showToast(
+                  `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
+                  pd.campaign.failed > 0 ? "warning" : "success"
+                );
+              }
+            }
+          } catch {}
+        }, 3000);
+        return;
+      }
+
+      // Small campaign — got full results back
       setCampData({
         status:        "done",
         totalContacts: d.total,
@@ -217,7 +230,7 @@ export default function BulkSend() {
       );
 
     } catch(e) {
-      showToast("Network error: "+e.message,"error");
+      showToast("Error: " + e.message,"error");
       setSending(false); setStep(2);
     }
   };
@@ -606,8 +619,20 @@ export default function BulkSend() {
         <div>
           <h2 style={{fontSize:15,fontWeight:800,marginBottom:16}}>
             {campData?.status==="scheduled" ? "⏰ Campaign Scheduled!"
-             : sending ? "⚡ Sending…" : "✅ Campaign Complete!"}
+             : campData?.status==="done"    ? "✅ Campaign Complete!"
+             : sending ? `⚡ Sending… (${campData?.totalContacts?.toLocaleString()||csvRows.length} messages)`
+             : "✅ Done!"}
           </h2>
+          {sending && campData?.totalContacts > 100 && (
+            <div style={{padding:"10px 14px",borderRadius:9,marginBottom:14,fontSize:13,
+              background:"rgba(41,121,255,.08)",border:"1px solid rgba(41,121,255,.25)",
+              color:"#2979ff",lineHeight:1.6}}>
+              ℹ This is a large campaign ({campData?.totalContacts?.toLocaleString()} messages).
+              It's running in the background on the server — you can safely close this page
+              and check progress in <strong>Campaigns</strong>.
+              Estimated time: ~{Math.ceil((campData?.totalContacts||0)*1.2/3600)} hours.
+            </div>
+          )}
 
           {campData?.status==="scheduled"&&(
             <div style={{background:C.card,border:`1px solid ${C.g1}`,borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
