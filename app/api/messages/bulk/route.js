@@ -103,8 +103,13 @@ export async function POST(req) {
 
     const campaignId = campaign._id.toString();
 
-    // Scheduled — return immediately
-    if (scheduledAt && new Date(scheduledAt) > new Date()) {
+    // Scheduled — return immediately (only if > 1 min in future)
+    const schedTime = scheduledAt ? new Date(scheduledAt) : null;
+    const isScheduled = schedTime && schedTime > new Date(Date.now() + 60*1000);
+
+    if (isScheduled) {
+      await Campaign.findByIdAndUpdate(campaignId, { status:"scheduled" });
+      console.log(`⏰ Campaign scheduled for: ${schedTime.toISOString()}`);
       return NextResponse.json({campaignId, status:"scheduled"},{status:201});
     }
 

@@ -145,7 +145,14 @@ export default function BulkSend() {
 
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
-      scheduledAt = new Date(`${schedDate}T${schedTime}`).toISOString();
+      // Parse as local time (browser timezone)
+      const localDt = new Date(`${schedDate}T${schedTime}:00`);
+      scheduledAt = localDt.toISOString();
+      // Must be at least 2 minutes in future
+      if (localDt <= new Date(Date.now() + 2*60*1000)) {
+        showToast("Schedule time must be at least 2 minutes in the future","error");
+        setSending(false); return;
+      }
     }
 
     // Build contacts and deduplicate by phone number

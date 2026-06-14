@@ -120,7 +120,9 @@ export default function Campaigns() {
                   textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                 <div style={{fontSize:12,color:"#ce93d8",marginTop:2}}>
                   📅 {new Date(c.scheduledAt).toLocaleString("en-IN",
-                    {dateStyle:"medium",timeStyle:"short"})}
+                    {day:"numeric",month:"short",year:"numeric",
+                     hour:"2-digit",minute:"2-digit",hour12:true,
+                     timeZone:"Asia/Kolkata"})} IST
                 </div>
                 <div style={{fontSize:11,color:C.txs}}>{c.totalContacts} contacts · {c.templateName}</div>
               </div>
