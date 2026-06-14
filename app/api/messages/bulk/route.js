@@ -149,9 +149,11 @@ export async function POST(req) {
     const schedTime   = scheduledAt ? new Date(scheduledAt) : null;
     const isScheduled = schedTime && schedTime > new Date(Date.now() + 60*1000);
 
+    console.log(`📋 Campaign: ${campaign.name} | contacts: ${unique.length} | scheduledAt: ${scheduledAt||"none"} | isScheduled: ${isScheduled}`);
+
     if (isScheduled) {
       await Campaign.findByIdAndUpdate(campaignId, { status:"scheduled" });
-      console.log(`⏰ Campaign scheduled for: ${schedTime.toISOString()}`);
+      console.log(`⏰ Saved as scheduled for: ${schedTime.toISOString()}`);
       return NextResponse.json({ campaignId, status:"scheduled", total:unique.length }, {status:201});
     }
 

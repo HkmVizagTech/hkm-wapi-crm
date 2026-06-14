@@ -140,6 +140,7 @@ export default function BulkSend() {
       setSending(false); setStep(2); return;
     }
 
+    // Build scheduledAt
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
       const localDt = new Date(`${schedDate}T${schedTime}:00`);
@@ -152,31 +153,30 @@ export default function BulkSend() {
 
     setSending(true); setStep(3);
 
+    // Normalize all contacts
     const allContacts = csvRows.map(r => ({
       phone:  normalizePhone(r.phone),
       name:   r.name || r.phone,
       params: getParams(r),
     }));
 
-    // Send in chunks of 5000 to avoid body size limits
-    const CHUNK = 5000;
-    const chunks = [];
+    const campBaseName = campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
+
+    // Split into chunks of 5000
+    const CHUNK   = 5000;
+    const chunks  = [];
     for (let i = 0; i < allContacts.length; i += CHUNK) {
       chunks.push(allContacts.slice(i, i + CHUNK));
     }
 
-    // If multiple chunks — create separate campaigns
-    if (chunks.length > 1) {
-      showToast(`Large campaign: splitting into ${chunks.length} batches of up to ${CHUNK.toLocaleString()} contacts`,"warning");
-    }
-
     try {
-      let lastCampId = null;
+      const campaignIds = [];
+
       for (let ci = 0; ci < chunks.length; ci++) {
-        const chunk      = chunks[ci];
-        const chunkName  = chunks.length > 1
-          ? `${campName || `Bulk ${tpl.name}`} (Part ${ci+1}/${chunks.length})`
-          : campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
+        const chunk     = chunks[ci];
+        const chunkName = chunks.length > 1
+          ? `${campBaseName} (Part ${ci+1}/${chunks.length})`
+          : campBaseName;
 
         const r = await fetch("/api/messages/bulk", {
           method:"POST",
@@ -189,56 +189,76 @@ export default function BulkSend() {
             delay,
             mediaUrl:     mediaUrl?.startsWith("http") ? mediaUrl : "",
             headerFormat: headerFmt,
-            scheduledAt:  ci === 0 ? scheduledAt : null, // only first chunk gets scheduled time
+            scheduledAt,  // ALL chunks get same scheduledAt
           }),
         });
 
         const d = await r.json().catch(()=>({}));
 
         if (!r.ok) {
-          showToast(d.error || `Chunk ${ci+1} failed`,"error");
+          showToast(d.error || `Part ${ci+1} failed: ${r.status}`,"error");
           setSending(false); setStep(2); return;
         }
 
-        lastCampId = d.campaignId;
-
-        if (d.status === "scheduled") {
-          setCampData({ status:"scheduled", totalContacts:allContacts.length, sent:0, failed:0, results:[] });
-          setSending(false);
-          showToast(`Scheduled! ${allContacts.length.toLocaleString()} contacts in ${chunks.length} batches`);
-          return;
-        }
-
+        campaignIds.push(d.campaignId);
         setCampId(d.campaignId);
+
+        // If scheduled — all chunks saved, done
+        if (d.status === "scheduled") {
+          if (ci === chunks.length - 1) {
+            setCampData({
+              status:"scheduled",
+              totalContacts: allContacts.length,
+              sent:0, failed:0, results:[],
+            });
+            setSending(false);
+            showToast(
+              chunks.length > 1
+                ? `Scheduled ${chunks.length} batches (${allContacts.length.toLocaleString()} contacts) for ${schedDate} ${schedTime}`
+                : `Scheduled! ${allContacts.length.toLocaleString()} contacts for ${schedDate} ${schedTime}`
+            );
+          }
+          continue; // move to next chunk
+        }
       }
 
-      // Poll last campaign for progress
-      if (lastCampId) {
-        setCampData({ status:"running", totalContacts:allContacts.length, sent:0, failed:0, results:[] });
-        if (allContacts.length > 100) {
-          showToast(`Campaign started! ${allContacts.length.toLocaleString()} messages sending in background`);
-        }
-        const poll = setInterval(async () => {
-          try {
-            const pr = await fetch(`/api/campaigns/${lastCampId}`);
-            const pd = await pr.json();
-            if (pd.campaign) {
-              setCampData(pd.campaign);
-              if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
-                clearInterval(poll);
-                setSending(false);
-                showToast(
-                  `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
-                  pd.campaign.failed > 0 ? "warning" : "success"
-                );
-              }
-            }
-          } catch {}
-        }, 3000);
+      // If scheduled — we're done
+      if (scheduledAt) return;
+
+      // Running — poll last campaign
+      const lastId = campaignIds[campaignIds.length - 1];
+      if (!lastId) { setSending(false); return; }
+
+      if (allContacts.length > 100) {
+        showToast(`Campaign started! ${allContacts.length.toLocaleString()} messages sending in background`);
       }
+
+      setCampData({
+        status:"running",
+        totalContacts: allContacts.length,
+        sent:0, failed:0, results:[],
+      });
+
+      const poll = setInterval(async () => {
+        try {
+          const pr = await fetch(`/api/campaigns/${lastId}`);
+          const pd = await pr.json();
+          if (pd.campaign) {
+            setCampData(pd.campaign);
+            if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
+              clearInterval(poll);
+              setSending(false);
+              showToast(
+                `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
+                pd.campaign.failed > 0 ? "warning" : "success"
+              );
+            }
+          }
+        } catch {}
+      }, 3000);
 
     } catch(e) {
-      showToast("Error: " + e.message,"error");
+      showToast("Error: " + e.message, "error");
       setSending(false); setStep(2);
     }
   };
