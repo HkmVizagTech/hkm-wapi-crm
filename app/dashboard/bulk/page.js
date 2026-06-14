@@ -135,7 +135,6 @@ export default function BulkSend() {
   };
 
   const startBulk = async () => {
-    // Validate image URL
     if (hasHeader && mediaUrl && mediaUrl.startsWith("data:")) {
       showToast("Please upload the image to Media Library first","error");
       setSending(false); setStep(2); return;
@@ -153,51 +152,75 @@ export default function BulkSend() {
 
     setSending(true); setStep(3);
 
-    const contacts = csvRows.map(r => ({
+    const allContacts = csvRows.map(r => ({
       phone:  normalizePhone(r.phone),
       name:   r.name || r.phone,
       params: getParams(r),
     }));
 
+    // Send in chunks of 5000 to avoid body size limits
+    const CHUNK = 5000;
+    const chunks = [];
+    for (let i = 0; i < allContacts.length; i += CHUNK) {
+      chunks.push(allContacts.slice(i, i + CHUNK));
+    }
+
+    // If multiple chunks — create separate campaigns
+    if (chunks.length > 1) {
+      showToast(`Large campaign: splitting into ${chunks.length} batches of up to ${CHUNK.toLocaleString()} contacts`,"warning");
+    }
+
     try {
-      const r = await fetch("/api/messages/bulk", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          name:         campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`,
-          templateName: tpl.name,
-          templateLang: tpl.language || "en",
-          contacts, delay,
-          mediaUrl:     mediaUrl?.startsWith("http") ? mediaUrl : "",
-          headerFormat: headerFmt,
-          scheduledAt,
-        }),
-      });
+      let lastCampId = null;
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const chunk      = chunks[ci];
+        const chunkName  = chunks.length > 1
+          ? `${campName || `Bulk ${tpl.name}`} (Part ${ci+1}/${chunks.length})`
+          : campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
 
-      const d = await r.json().catch(()=>({}));
+        const r = await fetch("/api/messages/bulk", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            name:         chunkName,
+            templateName: tpl.name,
+            templateLang: tpl.language || "en",
+            contacts:     chunk,
+            delay,
+            mediaUrl:     mediaUrl?.startsWith("http") ? mediaUrl : "",
+            headerFormat: headerFmt,
+            scheduledAt:  ci === 0 ? scheduledAt : null, // only first chunk gets scheduled time
+          }),
+        });
 
-      if (!r.ok) {
-        showToast(d.error || "Request failed","error");
-        setSending(false); setStep(2); return;
+        const d = await r.json().catch(()=>({}));
+
+        if (!r.ok) {
+          showToast(d.error || `Chunk ${ci+1} failed`,"error");
+          setSending(false); setStep(2); return;
+        }
+
+        lastCampId = d.campaignId;
+
+        if (d.status === "scheduled") {
+          setCampData({ status:"scheduled", totalContacts:allContacts.length, sent:0, failed:0, results:[] });
+          setSending(false);
+          showToast(`Scheduled! ${allContacts.length.toLocaleString()} contacts in ${chunks.length} batches`);
+          return;
+        }
+
+        setCampId(d.campaignId);
       }
 
-      // Scheduled
-      if (d.status === "scheduled") {
-        setCampData({ status:"scheduled", totalContacts:d.total, sent:0, failed:0, results:[] });
-        setSending(false);
-        showToast(`Scheduled! Will send at ${schedDate} ${schedTime}`);
-        return;
-      }
-
-      setCampId(d.campaignId);
-
-      // Large campaign — running in background, poll for progress
-      if (d.status === "running") {
-        showToast(`Campaign started! ${d.total?.toLocaleString()} messages sending in background`);
-        // Poll every 3 seconds
+      // Poll last campaign for progress
+      if (lastCampId) {
+        setCampData({ status:"running", totalContacts:allContacts.length, sent:0, failed:0, results:[] });
+        if (allContacts.length > 100) {
+          showToast(`Campaign started! ${allContacts.length.toLocaleString()} messages sending in background`);
+        }
         const poll = setInterval(async () => {
           try {
-            const pr = await fetch(`/api/campaigns/${d.campaignId}`);
+            const pr = await fetch(`/api/campaigns/${lastCampId}`);
             const pd = await pr.json();
             if (pd.campaign) {
               setCampData(pd.campaign);
@@ -212,22 +235,7 @@ export default function BulkSend() {
             }
           } catch {}
         }, 3000);
-        return;
       }
-
-      // Small campaign — got full results back
-      setCampData({
-        status:        "done",
-        totalContacts: d.total,
-        sent:          d.sent,
-        failed:        d.failed,
-        results:       d.results||[],
-      });
-      setSending(false);
-      showToast(
-        `Done! ${d.sent} sent, ${d.failed} failed`,
-        d.failed > 0 ? "warning" : "success"
-      );
 
     } catch(e) {
       showToast("Error: " + e.message,"error");
