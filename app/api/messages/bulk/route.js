@@ -1,9 +1,5 @@
 export const dynamic = "force-dynamic";
-
-// Increase body size limit to 50MB for large CSV uploads
-export const config = {
-  api: { bodyParser: { sizeLimit: "50mb" } },
-};
+export const maxDuration = 300;
 import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Campaign         from "@/models/Campaign";
