@@ -103,14 +103,14 @@ export default function Campaigns() {
         ))}
       </div>
 
-      {/* Scheduled campaigns highlight */}
-      {!loading && campaigns.filter(c=>c.status==="scheduled").length > 0 && (
+      {/* Queued + Scheduled campaigns highlight */}
+      {!loading && campaigns.filter(c=>["queued","scheduled"].includes(c.status)).length > 0 && (
         <div style={{background:"rgba(156,39,176,.08)",border:"1px solid rgba(156,39,176,.3)",
           borderRadius:12,padding:14,marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:14,color:"#ce93d8",marginBottom:10}}>
-            ⏰ Scheduled Campaigns ({campaigns.filter(c=>c.status==="scheduled").length})
+            ⏰ Pending Campaigns ({campaigns.filter(c=>["queued","scheduled"].includes(c.status)).length})
           </div>
-          {campaigns.filter(c=>c.status==="scheduled").map(c=>(
+          {campaigns.filter(c=>["queued","scheduled"].includes(c.status)).map(c=>(
             <div key={c._id} style={{display:"flex",justifyContent:"space-between",
               alignItems:"center",padding:"10px 12px",borderRadius:10,
               background:"rgba(156,39,176,.1)",marginBottom:8,
@@ -119,10 +119,10 @@ export default function Campaigns() {
                 <div style={{fontWeight:700,fontSize:13,color:C.tx,overflow:"hidden",
                   textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                 <div style={{fontSize:12,color:"#ce93d8",marginTop:2}}>
-                  📅 {new Date(c.scheduledAt).toLocaleString("en-IN",
+                  {c.status==="queued" ? "⚡ Sending now (queued)" : ("📅 "+new Date(c.scheduledAt).toLocaleString("en-IN",
                     {day:"numeric",month:"short",year:"numeric",
                      hour:"2-digit",minute:"2-digit",hour12:true,
-                     timeZone:"Asia/Kolkata"})} IST
+                     timeZone:"Asia/Kolkata"}))+" IST"}
                 </div>
                 <div style={{fontSize:11,color:C.txs}}>{c.totalContacts} contacts · {c.templateName}</div>
               </div>
