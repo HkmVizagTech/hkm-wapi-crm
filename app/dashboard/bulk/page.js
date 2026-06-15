@@ -164,7 +164,7 @@ export default function BulkSend() {
     const campBaseName = campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
 
     // Split into chunks of 5000
-    const CHUNK   = 5000;
+    const CHUNK   = 2000;
     const chunks  = [];
     for (let i = 0; i < allContacts.length; i += CHUNK) {
       chunks.push(allContacts.slice(i, i + CHUNK));

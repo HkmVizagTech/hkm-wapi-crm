@@ -101,11 +101,14 @@ async function processCampaign(campaignId) {
 export async function POST(req) {
   try {
     await connectDB();
+    const rawBody = await req.text();
+    console.log(`📦 Request body size: ${(rawBody.length/1024/1024).toFixed(2)} MB`);
+    const parsed = JSON.parse(rawBody);
     const {
       name, templateName, templateLang,
       contacts, delay=1200,
       mediaUrl, headerFormat, scheduledAt,
-    } = await req.json();
+    } = parsed;
 
     if (!contacts?.length || !templateName)
       return NextResponse.json({error:"Missing required fields"},{status:400});
