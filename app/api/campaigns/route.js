@@ -7,22 +7,20 @@ export async function GET(req) {
   await connectDB();
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
+  const query  = status && status !== "ALL" ? { status } : {};
 
-  const query = status && status !== "ALL" ? { status } : {};
-
+  // Exclude results array — it can be huge (2000 items per campaign)
   const campaigns = await Campaign.find(query)
+    .select("-results -defaultParams")
     .sort({ createdAt:-1 })
-    .limit(200)  // increased from 100
+    .limit(200)
     .lean();
 
   const enriched = campaigns.map(c => {
-    const results    = c.results || [];
-    const delivered  = results.filter(r => r.status==="delivered").length;
-    const read       = results.filter(r => r.status==="read").length;
-    const pending    = results.filter(r => r.status==="pending").length;
     const deliveryRate = c.sent > 0
-      ? Math.round(((delivered + read) / c.sent) * 100) : 0;
-    return { ...c, results:undefined, delivered, read, pending, deliveryRate };
+      ? Math.round(((c.delivered||0) + (c.read||0)) / c.sent * 100) : 0;
+    const pending = (c.totalContacts||0) - (c.sent||0) - (c.failed||0);
+    return { ...c, deliveryRate, pending: Math.max(0, pending) };
   });
 
   return NextResponse.json({ campaigns: enriched });
