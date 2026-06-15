@@ -39,7 +39,13 @@ export async function POST(req) {
     const isScheduled = schedTime && schedTime > new Date(Date.now() + 60*1000);
     const status      = isScheduled ? "scheduled" : "queued";
 
-    // Save to DB and return immediately — cron will process it
+    // Store params once at campaign level if all contacts share same params
+    // This avoids storing 400+ chars per contact in MongoDB
+    const firstParams = unique[0]?.params || [];
+    const allSameParams = unique.every(c =>
+      JSON.stringify(c.params||[]) === JSON.stringify(firstParams)
+    );
+
     const campaign = await Campaign.create({
       name:          name || `Bulk ${templateName} ${new Date().toLocaleDateString()}`,
       templateName,  templateLang:templateLang||"en",
@@ -49,10 +55,13 @@ export async function POST(req) {
       delay,
       scheduledAt:   schedTime,
       status,
+      // If all params identical, store once at top level
+      defaultParams: allSameParams ? firstParams : [],
       results: unique.map(c=>({
         phone:  c.phone,
         name:   c.name||"",
-        params: c.params||[],
+        // Only store params per-contact if they differ
+        params: allSameParams ? [] : (c.params||[]),
         status: "pending",
       })),
     });
