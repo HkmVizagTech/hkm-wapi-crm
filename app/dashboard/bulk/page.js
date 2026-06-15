@@ -141,7 +141,6 @@ export default function BulkSend() {
       setSending(false); setStep(2); return;
     }
 
-    // Build scheduledAt
     let scheduledAt = null;
     if (schedule && schedDate && schedTime) {
       const localDt = new Date(`${schedDate}T${schedTime}:00`);
@@ -154,7 +153,6 @@ export default function BulkSend() {
 
     setSending(true); setStep(3);
 
-    // Normalize all contacts
     const allContacts = csvRows.map(r => ({
       phone:  normalizePhone(r.phone),
       name:   r.name || r.phone,
@@ -162,13 +160,12 @@ export default function BulkSend() {
     }));
 
     const campBaseName = campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
-
-    // Split into chunks of 5000
-    const CHUNK   = 2000;
-    const chunks  = [];
-    for (let i = 0; i < allContacts.length; i += CHUNK) {
+    const CHUNK  = 2000;
+    const chunks = [];
+    for (let i = 0; i < allContacts.length; i += CHUNK)
       chunks.push(allContacts.slice(i, i + CHUNK));
-    }
+
+    setCampData({ status:"queued", totalContacts:allContacts.length, sent:0, failed:0 });
 
     try {
       const campaignIds = [];
@@ -179,90 +176,49 @@ export default function BulkSend() {
           ? `${campBaseName} (Part ${ci+1}/${chunks.length})`
           : campBaseName;
 
+        showToast(`Saving batch ${ci+1}/${chunks.length}…`);
+
         const r = await fetch("/api/messages/bulk", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({
-            name:         chunkName,
-            templateName: tpl.name,
-            templateLang: tpl.language || "en",
-            contacts:     chunk,
-            delay,
-            mediaUrl:     mediaUrl?.startsWith("http") ? mediaUrl : "",
-            headerFormat: headerFmt,
-            scheduledAt,  // ALL chunks get same scheduledAt
+            name: chunkName, templateName:tpl.name,
+            templateLang:tpl.language||"en", contacts:chunk,
+            delay, mediaUrl:mediaUrl?.startsWith("http")?mediaUrl:"",
+            headerFormat:headerFmt, scheduledAt,
           }),
         });
 
         const d = await r.json().catch(()=>({}));
-
         if (!r.ok) {
-          showToast(d.error || `Part ${ci+1} failed: ${r.status}`,"error");
+          showToast(d.error||`Batch ${ci+1} failed`,"error");
           setSending(false); setStep(2); return;
         }
-
         campaignIds.push(d.campaignId);
-        setCampId(d.campaignId);
-
-        // If scheduled — all chunks saved, done
-        if (d.status === "scheduled") {
-          if (ci === chunks.length - 1) {
-            setCampData({
-              status:"scheduled",
-              totalContacts: allContacts.length,
-              sent:0, failed:0, results:[],
-            });
-            setSending(false);
-            showToast(
-              chunks.length > 1
-                ? `Scheduled ${chunks.length} batches (${allContacts.length.toLocaleString()} contacts) for ${schedDate} ${schedTime}`
-                : `Scheduled! ${allContacts.length.toLocaleString()} contacts for ${schedDate} ${schedTime}`
-            );
-          }
-          continue; // move to next chunk
-        }
       }
 
-      // If scheduled — we're done
-      if (scheduledAt) return;
-
-      // Running — poll last campaign
-      const lastId = campaignIds[campaignIds.length - 1];
-      if (!lastId) { setSending(false); return; }
-
-      if (allContacts.length > 100) {
-        showToast(`Campaign started! ${allContacts.length.toLocaleString()} messages sending in background`);
-      }
+      // All saved — show status based on type
+      const isScheduled = !!scheduledAt;
+      const total = allContacts.length;
+      const batches = chunks.length;
 
       setCampData({
-        status:"running",
-        totalContacts: allContacts.length,
-        sent:0, failed:0, results:[],
+        status: isScheduled ? "scheduled" : "queued",
+        totalContacts: total, sent:0, failed:0,
       });
+      setSending(false);
 
-      const poll = setInterval(async () => {
-        try {
-          const pr = await fetch(`/api/campaigns/${lastId}`);
-          const pd = await pr.json();
-          if (pd.campaign) {
-            setCampData(pd.campaign);
-            if (pd.campaign.status==="done"||pd.campaign.status==="stopped") {
-              clearInterval(poll);
-              setSending(false);
-              showToast(
-                `Done! ${pd.campaign.sent} sent, ${pd.campaign.failed} failed`,
-                pd.campaign.failed > 0 ? "warning" : "success"
-              );
-            }
-          }
-        } catch {}
-      }, 3000);
+      if (isScheduled) {
+        showToast(`✅ Scheduled ${total.toLocaleString()} contacts in ${batches} batch${batches>1?"es":""}`);
+      } else {
+        showToast(`✅ ${batches} batch${batches>1?"es":""} queued! Server will send ${total.toLocaleString()} messages now.`);
+      }
 
     } catch(e) {
-      showToast("Error: " + e.message, "error");
+      showToast("Error: " + e.message,"error");
       setSending(false); setStep(2);
     }
-  };
+  };;
 
   const total = campData?.totalContacts || csvRows.length || 1;
   const done  = (campData?.sent||0) + (campData?.failed||0);
@@ -648,8 +604,9 @@ export default function BulkSend() {
         <div>
           <h2 style={{fontSize:15,fontWeight:800,marginBottom:16}}>
             {campData?.status==="scheduled" ? "⏰ Campaign Scheduled!"
+             : campData?.status==="queued"  ? "✅ Campaign Queued!"
              : campData?.status==="done"    ? "✅ Campaign Complete!"
-             : sending ? `⚡ Sending… (${campData?.totalContacts?.toLocaleString()||csvRows.length} messages)`
+             : sending ? "⏳ Saving batches…"
              : "✅ Done!"}
           </h2>
           {sending && campData?.totalContacts > 100 && (
@@ -663,6 +620,20 @@ export default function BulkSend() {
             </div>
           )}
 
+          {campData?.status==="queued"&&(
+            <div style={{background:C.card,border:`1px solid ${C.g1}`,
+              borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
+              <div style={{fontSize:40,marginBottom:10}}>⚡</div>
+              <div style={{fontWeight:800,fontSize:16,color:C.g1,marginBottom:6}}>Sending Now!</div>
+              <div style={{fontSize:13,color:C.txs,lineHeight:1.6}}>
+                <strong style={{color:C.tx}}>{campData?.totalContacts?.toLocaleString()} messages</strong> are queued.<br/>
+                The server is sending them in the background.<br/>
+                <a href="/dashboard/campaigns" style={{color:C.g1,fontWeight:700}}>
+                  View progress in Campaigns →
+                </a>
+              </div>
+            </div>
+          )}
           {campData?.status==="scheduled"&&(
             <div style={{background:C.card,border:`1px solid ${C.g1}`,borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
               <div style={{fontSize:40,marginBottom:10}}>⏰</div>
