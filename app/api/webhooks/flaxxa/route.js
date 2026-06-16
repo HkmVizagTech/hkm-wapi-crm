@@ -5,6 +5,32 @@ import Message          from "@/models/Message";
 import Contact          from "@/models/Contact";
 import Campaign         from "@/models/Campaign";
 
+async function forwardWebhook(payload, eventType) {
+  try {
+    const forwards = await WebhookForward.find({ enabled:true }).lean();
+    for (const fwd of forwards) {
+      if (fwd.events.includes("all") || fwd.events.includes(eventType)) {
+        const headers = {
+          "Content-Type":   "application/json",
+          "X-Source":       "HKM-Vizag-CRM",
+          "X-Event-Type":   eventType,
+          "X-Forwarded-At": new Date().toISOString(),
+        };
+        if (fwd.secret) headers["X-Webhook-Secret"] = fwd.secret;
+        fetch(fwd.url, {
+          method: "POST", headers,
+          body:   JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
+        }).then(r => {
+          WebhookForward.findByIdAndUpdate(fwd._id,
+            { lastSentAt:new Date(), lastStatus:r.status }
+          ).catch(()=>{});
+        }).catch(()=>{});
+      }
+    }
+  } catch {}
+}
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const mode      = searchParams.get("hub.mode");
