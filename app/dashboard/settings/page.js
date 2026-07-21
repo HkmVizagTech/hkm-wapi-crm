@@ -16,6 +16,9 @@ const IS = {
 
 export default function Settings() {
   const [forwards, setForwards] = useState([]);
+  const [users,    setUsers]    = useState([]);
+  const [uForm,    setUForm]    = useState({ name:"",email:"",password:"",role:"viewer" });
+  const [uSaving,  setUSaving]  = useState(false);
   const [loading,  setLoading]  = useState(true);
   const [form,     setForm]     = useState({ name:"",url:"",secret:"",events:["all"] });
   const [saving,   setSaving]   = useState(false);
@@ -33,7 +36,10 @@ export default function Settings() {
     setLoading(false);
   };
 
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{
+    load();
+    fetch("/api/users").then(r=>r.json()).then(d=>setUsers(d.users||[]));
+  },[]);
 
   const addForward = async () => {
     if (!form.name||!form.url) return showToast("Name and URL required","error");
@@ -258,6 +264,134 @@ export default function Settings() {
                   🗑 Delete
                 </button>
               </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* User Management */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,
+        borderRadius:12,padding:16,marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>👥 Users</div>
+        <p style={{fontSize:12,color:C.txs,marginBottom:16,lineHeight:1.6}}>
+          Manage login accounts. Admins have full access. Viewers can only view.
+        </p>
+
+        {/* Add user form */}
+        <div style={{background:C.surf,borderRadius:10,padding:14,
+          border:`1px solid ${C.border}`,marginBottom:16}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:C.g1}}>+ Add User</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Name</label>
+              <input style={IS} placeholder="Full name"
+                value={uForm.name} onChange={e=>setUForm(f=>({...f,name:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Email</label>
+              <input style={IS} placeholder="email@example.com" type="email"
+                value={uForm.email} onChange={e=>setUForm(f=>({...f,email:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Password</label>
+              <input style={IS} placeholder="Set password" type="password"
+                value={uForm.password} onChange={e=>setUForm(f=>({...f,password:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Role</label>
+              <select style={IS} value={uForm.role}
+                onChange={e=>setUForm(f=>({...f,role:e.target.value}))}>
+                <option value="viewer">Viewer (read only)</option>
+                <option value="admin">Admin (full access)</option>
+              </select>
+            </div>
+          </div>
+          <button disabled={uSaving||!uForm.name||!uForm.email||!uForm.password}
+            onClick={async()=>{
+              setUSaving(true);
+              const r=await fetch("/api/users",{method:"POST",
+                headers:{"Content-Type":"application/json"},body:JSON.stringify(uForm)});
+              const d=await r.json();
+              if(r.ok){
+                setUsers(p=>[d.user,...p]);
+                setUForm({name:"",email:"",password:"",role:"viewer"});
+                showToast("User created!");
+              } else showToast(d.error||"Failed","error");
+              setUSaving(false);
+            }}
+            style={{width:"100%",padding:"10px",borderRadius:9,border:"none",
+              background:uSaving||!uForm.name||!uForm.email||!uForm.password
+                ?C.border:`linear-gradient(135deg,${C.g1},${C.g2})`,
+              color:uSaving||!uForm.name||!uForm.email||!uForm.password?C.txd:"#000",
+              fontWeight:700,fontSize:13,cursor:"pointer"}}>
+            {uSaving?"Creating…":"+ Create User"}
+          </button>
+        </div>
+
+        {/* User list */}
+        {users.length===0 && (
+          <p style={{color:C.txd,fontSize:13,textAlign:"center",padding:16}}>
+            No extra users yet. Only admin env login active.
+          </p>
+        )}
+        {users.map(u=>(
+          <div key={u._id} style={{display:"flex",alignItems:"center",gap:12,
+            padding:"12px 14px",borderRadius:10,background:C.surf,
+            border:`1px solid ${C.border}`,marginBottom:8}}>
+            <div style={{width:38,height:38,borderRadius:"50%",flexShrink:0,
+              background:u.role==="admin"?`${C.g1}20`:`${C.blue}20`,
+              border:`2px solid ${u.role==="admin"?C.g1:C.blue}40`,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:14,fontWeight:800,
+              color:u.role==="admin"?C.g1:C.blue}}>
+              {u.name.slice(0,2).toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:13}}>{u.name}</div>
+              <div style={{fontSize:11,color:C.txs}}>{u.email}</div>
+              <div style={{display:"flex",gap:6,marginTop:3}}>
+                <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
+                  background:u.role==="admin"?`${C.g1}18`:`${C.blue}18`,
+                  color:u.role==="admin"?C.g1:C.blue}}>
+                  {u.role}
+                </span>
+                <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
+                  background:u.active?`${C.g1}10`:`${C.red}10`,
+                  color:u.active?C.g1:C.red}}>
+                  {u.active?"active":"disabled"}
+                </span>
+                {u.lastLogin&&(
+                  <span style={{fontSize:10,color:C.txd}}>
+                    last login: {new Date(u.lastLogin).toLocaleDateString("en-IN")}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={async()=>{
+                await fetch(`/api/users/${u._id}`,{method:"PATCH",
+                  headers:{"Content-Type":"application/json"},
+                  body:JSON.stringify({active:!u.active})});
+                setUsers(p=>p.map(x=>x._id===u._id?{...x,active:!u.active}:x));
+              }} style={{padding:"5px 10px",borderRadius:7,
+                border:`1px solid ${C.border}`,background:"transparent",
+                color:C.txs,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                {u.active?"Disable":"Enable"}
+              </button>
+              <button onClick={async()=>{
+                if(!confirm(`Delete ${u.name}?`)) return;
+                await fetch(`/api/users/${u._id}`,{method:"DELETE"});
+                setUsers(p=>p.filter(x=>x._id!==u._id));
+                showToast("Deleted");
+              }} style={{padding:"5px 10px",borderRadius:7,
+                border:`1px solid ${C.red}40`,background:`${C.red}10`,
+                color:C.red,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                Delete
+              </button>
             </div>
           </div>
         ))}
