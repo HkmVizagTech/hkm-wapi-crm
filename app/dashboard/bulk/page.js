@@ -427,6 +427,32 @@ export default function BulkSend() {
               value={campName} onChange={e=>setCampName(e.target.value)}/>
           </div>
 
+          {/* Provider selector */}
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+              📡 Sending Provider
+            </label>
+            <div style={{display:"flex",gap:8}}>
+              {[
+                {id:"flaxxa",  label:"Flaxxa WAPI",  sub:"+91 90631 72108"},
+                {id:"gupshup", label:"Gupshup",      sub:"+91 70751 76108"},
+              ].map(p=>(
+                <div key={p.id} onClick={()=>setProvider(p.id)} style={{
+                  flex:1,padding:"10px 14px",borderRadius:10,cursor:"pointer",
+                  border:`2px solid ${provider===p.id?C.g1:C.border}`,
+                  background:provider===p.id?`${C.g1}08`:C.surf,
+                  transition:"all .15s",
+                }}>
+                  <div style={{fontWeight:800,fontSize:13,color:provider===p.id?C.g1:C.tx}}>
+                    {provider===p.id?"✓ ":""}{p.label}
+                  </div>
+                  <div style={{fontSize:11,color:C.txs,marginTop:2}}>{p.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div style={{marginBottom:16}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
               textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Delay (ms)</label>

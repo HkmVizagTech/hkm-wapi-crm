@@ -22,6 +22,7 @@ export async function POST(req) {
       name, templateName, templateLang,
       contacts, delay=1200,
       mediaUrl, headerFormat, scheduledAt,
+      provider="flaxxa",
     } = JSON.parse(rawBody);
 
     if (!contacts?.length || !templateName)

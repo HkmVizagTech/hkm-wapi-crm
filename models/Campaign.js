@@ -17,6 +17,7 @@ const S = new mongoose.Schema({
   status:       { type:String, enum:["scheduled","queued","running","done","stopped"], default:"queued" },
   delay:        { type:Number, default:1200 },
   headerFormat:  String,
+  provider:       { type:String, enum:["flaxxa","gupshup"], default:"flaxxa" },
   defaultParams:  [String],
   scheduledAt:  Date,
   results:      [R],
