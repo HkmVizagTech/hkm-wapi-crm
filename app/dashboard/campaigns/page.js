@@ -119,10 +119,11 @@ export default function Campaigns() {
                 <div style={{fontWeight:700,fontSize:13,color:C.tx,overflow:"hidden",
                   textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                 <div style={{fontSize:12,color:"#ce93d8",marginTop:2}}>
-                  {c.status==="queued" ? "⚡ Sending now (queued)" : ("📅 "+new Date(c.scheduledAt).toLocaleString("en-IN",
-                    {day:"numeric",month:"short",year:"numeric",
-                     hour:"2-digit",minute:"2-digit",hour12:true,
-                     timeZone:"Asia/Kolkata"}))+" IST"}
+                  {c.status==="queued"
+                    ? "⚡ Sending now (queued)"
+                    : c.scheduledAt
+                      ? new Date(c.scheduledAt).toLocaleString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"})+" IST"
+                      : "Scheduled"}
                 </div>
                 <div style={{fontSize:11,color:C.txs}}>{c.totalContacts} contacts · {c.templateName}</div>
               </div>
