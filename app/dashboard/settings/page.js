@@ -269,6 +269,62 @@ export default function Settings() {
         ))}
       </div>
 
+      {/* AI Assistant Settings */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,
+        borderRadius:12,padding:16,marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>🤖 AI Assistant (Gemini)</div>
+        <p style={{fontSize:12,color:C.txs,marginBottom:14,lineHeight:1.6}}>
+          Gemini AI auto-replies to incoming WhatsApp messages based on HKM Vizag knowledge.
+          Handles donation queries, temple info, seva details, and more.
+        </p>
+
+        {/* Gemini API Key */}
+        <div style={{marginBottom:12}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+            textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>
+            Gemini API Key (set in Railway env: GEMINI_API_KEY)
+          </label>
+          <div style={{background:C.surf,borderRadius:8,padding:"9px 13px",
+            border:`1px solid ${C.border}`,fontSize:12,color:C.txd,fontFamily:"monospace"}}>
+            {process.env.GEMINI_API_KEY ? "✅ Configured" : "⚠️ Not set — add GEMINI_API_KEY to Railway env vars"}
+          </div>
+        </div>
+
+        {/* Features */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {[
+            {icon:"💬",title:"Auto-Reply",desc:"Replies to inbound messages automatically"},
+            {icon:"🎯",title:"Donation Focus",desc:"Guides devotees to seva and donation pages"},
+            {icon:"🚨",title:"Human Escalation",desc:"Flags complex queries for staff"},
+            {icon:"📊",title:"Interest Tracking",desc:"Logs donation interest in CRM"},
+            {icon:"🌐",title:"Telugu + English",desc:"Understands mixed language messages"},
+            {icon:"🛡️",title:"Guardrails",desc:"Only devotional/temple topics"},
+          ].map(f=>(
+            <div key={f.icon} style={{background:C.surf,borderRadius:8,padding:"10px 12px",
+              border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:18,marginBottom:4}}>{f.icon}</div>
+              <div style={{fontWeight:700,fontSize:12}}>{f.title}</div>
+              <div style={{fontSize:11,color:C.txs,marginTop:2}}>{f.desc}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Modes */}
+        <div style={{background:C.surf,borderRadius:8,padding:12,border:`1px solid ${C.border}`}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>Conversation Modes (per contact in Inbox):</div>
+          {[
+            {m:"🤖 AI Auto",   d:"Gemini replies instantly to every message"},
+            {m:"✏️ AI Draft",  d:"Gemini drafts reply, staff approves before sending"},
+            {m:"👤 Human Only",d:"AI disabled, staff handles manually"},
+          ].map(r=>(
+            <div key={r.m} style={{display:"flex",gap:8,marginBottom:6,fontSize:12}}>
+              <span style={{fontWeight:700,minWidth:110}}>{r.m}</span>
+              <span style={{color:C.txs}}>{r.d}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* User Management */}
       <div style={{background:C.card,border:`1px solid ${C.border}`,
         borderRadius:12,padding:16,marginBottom:20}}>

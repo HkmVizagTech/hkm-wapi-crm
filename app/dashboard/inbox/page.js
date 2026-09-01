@@ -341,7 +341,21 @@ export default function Inbox() {
             {selected.phone}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,flexShrink:0}}>
+        <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+          {/* AI Mode toggle */}
+          <select
+            defaultValue={selected?.aiMode||"auto"}
+            onChange={async e=>{
+              await fetch("/api/contacts/ai-mode",{method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({phone:selected.phone,mode:e.target.value})});
+            }}
+            style={{padding:"5px 8px",borderRadius:8,border:`1px solid ${C.border}`,
+              background:C.surf,color:C.txs,fontSize:11,fontWeight:700,cursor:"pointer",outline:"none"}}>
+            <option value="auto">🤖 AI Auto</option>
+            <option value="draft">✏️ AI Draft</option>
+            <option value="human">👤 Human</option>
+          </select>
           <button onClick={checkStatus} disabled={checking}
             style={{padding:"7px 10px",borderRadius:20,border:`1px solid ${C.border}`,
               background:"transparent",color:checking?C.txd:C.teal,
@@ -487,6 +501,11 @@ export default function Inbox() {
                       whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
                       {m.body}
                     </p>
+                  )}
+                  {/* AI badge */}
+                  {m.isAiGenerated && (
+                    <div style={{fontSize:9,color:isOut?"rgba(0,0,0,.5)":C.txd,
+                      marginBottom:2,fontWeight:700}}>🤖 AI</div>
                   )}
                   {/* Time + status */}
                   <div style={{display:"flex",alignItems:"center",

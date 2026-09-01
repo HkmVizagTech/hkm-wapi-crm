@@ -13,6 +13,7 @@ const S = new mongoose.Schema({
   wamid:        String,
   campaignId:   { type:mongoose.Schema.Types.ObjectId, ref:"Campaign" },
   sentAt:       { type:Date, default:Date.now },
+  isAiGenerated:{ type:Boolean, default:false },
   deliveredAt:  Date,
   readAt:       Date,
 });

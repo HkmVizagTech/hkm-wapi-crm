@@ -8,4 +8,8 @@ const S = new mongoose.Schema({
   addedAt:{ type:Date, default:Date.now },
 });
 S.index({ phone:1 }, { unique:true });
+// AI Assistant fields
+// aiStatus: new|interested|needs_human|do_not_contact|donated|completed
+// conversationMode: auto|draft|human
+
 export default mongoose.models.Contact || mongoose.model("Contact", S);

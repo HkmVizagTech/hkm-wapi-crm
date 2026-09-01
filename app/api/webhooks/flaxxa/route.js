@@ -131,12 +131,58 @@ export async function POST(req) {
             { upsert:true }
           );
 
-          await Contact.findOneAndUpdate(
+          const contact = await Contact.findOneAndUpdate(
             { phone },
             { $set:{ lastMessageAt:timestamp, name:contactName },
               $setOnInsert:{ phone, name:contactName, addedAt:new Date() } },
-            { upsert:true }
+            { upsert:true, new:true }
           );
+
+          // AI processing — only for inbound text/button messages
+          // Skip if contact is in human mode or do-not-contact
+          const aiMode = contact?.aiMode || "auto";
+          if (
+            type === "text" &&
+            aiMode === "auto" &&
+            !contact?.doNotContact &&
+            process.env.GEMINI_API_KEY
+          ) {
+            // Get last 6 messages for context
+            const history = await Message.find({ contactPhone:phone })
+              .sort({ sentAt:-1 }).limit(6).lean();
+            history.reverse();
+
+            const { reply, action } = await processWithGemini(
+              phone, contactName, bodyText, history
+            );
+
+            // Execute any triggered action
+            if (action) {
+              await executeAction(action, { phone, contactName, message:bodyText });
+            }
+
+            // Auto-reply via Flaxxa
+            if (reply && aiMode === "auto") {
+              const replyToken = process.env.FLAXXA_TOKEN;
+              await fetch("https://wapi.flaxxa.com/api/v1/sendSessionMessage", {
+                method:"POST",
+                headers:{ "Content-Type":"application/json" },
+                body: JSON.stringify({ token:replyToken, phone, message:reply }),
+              }).catch(()=>{});
+
+              // Save AI reply to messages
+              await Message.create({
+                contactPhone: phone,
+                contactName,
+                direction:    "outbound",
+                type:         "text",
+                body:         reply,
+                status:       "sent",
+                sentAt:       new Date(),
+                isAiGenerated: true,
+              });
+            }
+          }
         }
 
         /* ── Delivery / read status updates ── */
