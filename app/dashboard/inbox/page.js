@@ -1,662 +1,530 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-import { TEMPLATES, relTime } from "@/lib/utils";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const C = {
   g1:"#25d366", g2:"#1aad52", teal:"#00c9d4", blue:"#2979ff",
-  amber:"#ffb300", red:"#f44336", purple:"#9c27b0",
-  card:"#111827", surf:"#0d1117", border:"#1c2a3f",
-  tx:"#e8edf5", txs:"#8899b0", txd:"#445566",
+  amber:"#ffb300", red:"#f44336", purple:"#9c27b0", orange:"#ff7043",
+  card:"#111827", surf:"#0d1117", surf2:"#161f2e", border:"#1c2a3f",
+  tx:"#e8edf5", txs:"#8899b0", txd:"#556",
   waBg:"#0b1014",
 };
 
-const AVC = [C.g1, C.teal, C.blue, C.purple, C.amber];
-const avc  = s => AVC[(s||"A").charCodeAt(0) % AVC.length];
+const AVC = [C.g1,C.teal,C.blue,C.purple,C.amber,C.orange];
+const avc = s => AVC[(s||"A").charCodeAt(0)%AVC.length];
+const initials = n => {
+  const s=(n||"?").trim();
+  if(/^[+\d\s]+$/.test(s)) return s.replace(/\D/g,"").slice(-2);
+  const w=s.split(/\s+/);
+  return (w.length>=2?w[0][0]+w[1][0]:s.slice(0,2)).toUpperCase();
+};
+const relTime = t => {
+  if(!t) return "";
+  const m=Math.floor((Date.now()-new Date(t))/60000);
+  if(m<1) return "now";
+  if(m<60) return m+"m";
+  const h=Math.floor(m/60);
+  if(h<24) return h+"h";
+  const d=Math.floor(h/24);
+  return d<7?d+"d":new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+};
 
-function Avatar({ name, size=40 }) {
-  const c = avc(name||"?");
-  // For phone numbers starting with country code, show last 2 meaningful chars
-  const initials = (() => {
-    const n = name || "?";
-    // If it looks like a phone number (all digits), show last 2 digits
-    if (/^[+\d\s]+$/.test(n.trim())) {
-      const digits = n.replace(/\D/g,"");
-      return digits.slice(-2);
-    }
-    // For names, use first 2 chars
-    const words = n.trim().split(/\s+/);
-    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-    return n.slice(0,2).toUpperCase();
-  })();
+function Avatar({name,size=42,online}){
+  const c=avc(name);
   return (
-    <div style={{
-      width:size, height:size, borderRadius:"50%", flexShrink:0,
-      background:`${c}20`, border:`2px solid ${c}40`,
-      display:"flex", alignItems:"center", justifyContent:"center",
-      fontSize:size*.34, fontWeight:800, color:c,
-    }}>
-      {initials}
+    <div style={{position:"relative",flexShrink:0}}>
+      <div style={{width:size,height:size,borderRadius:"50%",
+        background:`${c}22`,border:`2px solid ${c}44`,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        fontSize:size*.34,fontWeight:800,color:c}}>
+        {initials(name)}
+      </div>
+      {online&&<div style={{position:"absolute",bottom:0,right:0,width:size*.28,
+        height:size*.28,borderRadius:"50%",background:C.g1,
+        border:`2px solid ${C.card}`}}/>}
     </div>
   );
 }
 
-function parseBody(s){try{const c=typeof s==="string"?JSON.parse(s):s;if(Array.isArray(c))return c.find(x=>x.type==="BODY")?.text||"";}catch{}return s||"";}
-function parseParams(s){const b=parseBody(s);return[...b.matchAll(/\{\{(\d+)\}\}/g)].map(m=>`Param ${m[1]}`);}
-function normalizeTpl(t){
-  if(t.components)return{id:t.id,name:t.name,status:t.status,category:t.category,
-    language:t.language,body:parseBody(t.components),params:parseParams(t.components)};
-  return t;
+const STATUS_COLORS = { open:C.blue, pending:C.amber, resolved:C.g1, snoozed:C.purple };
+const PRIORITY_COLORS = { low:C.txd, normal:C.txs, high:C.orange, urgent:C.red };
+
+function StatusPill({status}){
+  const col=STATUS_COLORS[status]||C.txs;
+  return <span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:20,
+    background:`${col}1e`,color:col,textTransform:"capitalize"}}>{status}</span>;
 }
 
-/* ── Compose bottom sheet ── */
-function ComposeSheet({ contact, token, onSent, onClose }) {
-  const [tab,    setTab]   = useState("text");
-  const [msg,    setMsg]   = useState("");
-  const [tplId,  setTplId] = useState("");
-  const [tplP,   setTplP]  = useState({});
-  const [loading,setLoad]  = useState(false);
-  const [err,    setErr]   = useState("");
-  const [templates,setTpls]= useState([]);
-  const textRef = useRef();
+export default function TeamInbox(){
+  const [convos,setConvos]     = useState([]);
+  const [counts,setCounts]     = useState({});
+  const [selected,setSelected] = useState(null);
+  const [messages,setMessages] = useState([]);
+  const [filter,setFilter]     = useState("all");
+  const [search,setSearch]     = useState("");
+  const [agents,setAgents]     = useState([]);
+  const [quickReplies,setQR]   = useState([]);
+  const [msgText,setMsgText]   = useState("");
+  const [noteText,setNoteText] = useState("");
+  const [tab,setTab]           = useState("reply"); // reply | note
+  const [showInfo,setShowInfo] = useState(true);
+  const [sending,setSending]   = useState(false);
+  const [convoData,setConvoData]= useState(null);
+  const [mobileView,setMobileView] = useState("list"); // list | chat (mobile)
+  const [me] = useState(()=> typeof window!=="undefined" ? (localStorage.getItem("userName")||"Admin") : "Admin");
 
-  useEffect(() => {
-    fetch("/api/templates").then(r=>r.json()).then(d=>{
-      if(d.templates?.length) setTpls(d.templates.map(normalizeTpl));
-    });
-    if(tab==="text") setTimeout(()=>textRef.current?.focus(), 300);
-  }, []);
+  const endRef  = useRef();
+  const pollRef = useRef();
 
-  const approved = templates.filter(t=>t.status==="APPROVED");
-  const tpl      = approved.find(t=>t.id===tplId);
-  const tplPList = tpl ? parseParams(tpl.components||tpl.body) : [];
+  const loadConvos = useCallback(async()=>{
+    const p = new URLSearchParams({ filter, agent:me });
+    if(search) p.set("search",search);
+    const r = await fetch(`/api/conversations?${p}`);
+    const d = await r.json();
+    setConvos(d.conversations||[]);
+    setCounts(d.counts||{});
+  },[filter,search,me]);
 
-  const send = async () => {
-    if(tab==="text" && !msg.trim()) return;
-    if(tab==="template" && !tpl) return;
-    setLoad(true); setErr("");
-    try {
-      const body = tab==="text"
-        ? { phone:contact.phone, type:"text", message:msg, contactName:contact.name }
-        : { phone:contact.phone, type:"template", templateName:tpl.name,
-            templateLang:tpl.language||"en",
-            params:tpl.params.map((_,i)=>tplP[i]||""),
-            contactName:contact.name };
-      const r = await fetch("/api/messages/send",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(body),
-      });
-      const d = await r.json();
-      if(r.ok) {
-        const preview = tab==="text" ? msg : `[Template: ${tpl.name}]`;
-        onSent({ _id:Date.now()+"", direction:"outbound", type:tab,
-          body:preview, status:"sent",
-          sentAt:new Date().toISOString(), wamid:d.wamid||"" });
-        setMsg(""); setTplId(""); setTplP({});
-      } else { setErr(d.error||"Send failed"); }
-    } catch(e) { setErr(e.message); }
-    setLoad(false);
+  useEffect(()=>{
+    loadConvos();
+    pollRef.current=setInterval(loadConvos,5000);
+    return ()=>clearInterval(pollRef.current);
+  },[loadConvos]);
+
+  useEffect(()=>{
+    fetch("/api/agents").then(r=>r.json()).then(d=>setAgents(d.agents||[]));
+    fetch("/api/quick-replies").then(r=>r.json()).then(d=>setQR(d.replies||[]));
+  },[]);
+
+  const openConvo = async(c)=>{
+    setSelected(c); setMobileView("chat");
+    // Load messages
+    const r=await fetch(`/api/inbox/${encodeURIComponent(c.phone)}`);
+    const d=await r.json();
+    setMessages(d.messages||[]);
+    // Load conversation meta
+    const cr=await fetch(`/api/conversations/${encodeURIComponent(c.phone)}`);
+    const cd=await cr.json();
+    setConvoData(cd.conversation);
+    // Mark read
+    if(c.unreadCount>0){
+      fetch(`/api/conversations/${encodeURIComponent(c.phone)}`,{method:"PATCH",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({unreadCount:0})});
+    }
   };
 
-  const IS = {
-    width:"100%", background:C.surf, border:`1px solid ${C.border}`,
-    borderRadius:10, padding:"10px 13px", color:C.tx, fontSize:14,
-    outline:"none", boxSizing:"border-box", fontFamily:"inherit",
+  useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); },[messages]);
+
+  const sendMessage = async()=>{
+    if(!msgText.trim()||!selected) return;
+    setSending(true);
+    const text=msgText; setMsgText("");
+    try{
+      await fetch("/api/messages/send",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({phone:selected.phone,type:"text",message:text,contactName:selected.name})});
+      setMessages(p=>[...p,{_id:Date.now()+"",direction:"outbound",type:"text",
+        body:text,status:"sent",sentAt:new Date().toISOString(),agentName:me}]);
+    }catch{}
+    setSending(false);
   };
+
+  const addNote = async()=>{
+    if(!noteText.trim()||!selected) return;
+    const text=noteText; setNoteText("");
+    const r=await fetch(`/api/conversations/${encodeURIComponent(selected.phone)}/notes`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text,author:me})});
+    const d=await r.json();
+    setConvoData(p=>({...p,notes:d.notes}));
+  };
+
+  const updateConvo = async(patch)=>{
+    const r=await fetch(`/api/conversations/${encodeURIComponent(selected.phone)}`,{
+      method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({...patch,resolvedBy:me})});
+    const d=await r.json();
+    setConvoData(d.conversation);
+    loadConvos();
+  };
+
+  const filters=[
+    {id:"all",       label:"All",        icon:"📥"},
+    {id:"mine",      label:"Mine",       icon:"👤"},
+    {id:"unassigned",label:"Unassigned", icon:"📭"},
+    {id:"open",      label:"Open",       icon:"🔵"},
+    {id:"resolved",  label:"Resolved",   icon:"✅"},
+  ];
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:200,
-      display:"flex",flexDirection:"column",justifyContent:"flex-end",
-      background:"rgba(0,0,0,.7)"}}>
-      <div style={{background:C.card,borderRadius:"20px 20px 0 0",
-        border:`1px solid ${C.border}`,maxHeight:"85vh",
-        display:"flex",flexDirection:"column",
-        animation:"slideUp .25s ease"}}>
-        {/* Handle */}
-        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 4px"}}>
-          <div style={{width:40,height:4,borderRadius:2,background:C.border}}/>
-        </div>
+    <div style={{display:"flex",height:"100%",background:C.waBg,overflow:"hidden"}}>
+
+      {/* ===== LEFT: Conversation List ===== */}
+      <div style={{
+        width:340,flexShrink:0,borderRight:`1px solid ${C.border}`,
+        display:"flex",flexDirection:"column",background:C.card,
+        ...(mobileView==="chat"?{display:"none"}:{}),
+      }} className="convo-list">
         {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-          padding:"0 16px 10px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <Avatar name={contact.name} size={36}/>
-            <div>
-              <div style={{fontWeight:800,fontSize:14}}>{contact.name||contact.phone}</div>
-              <div style={{fontSize:11,color:C.txs}}>{contact.phone}</div>
-            </div>
+        <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <h1 style={{fontSize:17,fontWeight:800}}>💬 Team Inbox</h1>
+            <button onClick={loadConvos} style={{background:"none",border:"none",
+              color:C.txs,fontSize:16,cursor:"pointer"}}>↻</button>
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",
-            color:C.txs,fontSize:24,cursor:"pointer",lineHeight:1}}>×</button>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="🔍 Search name or number"
+            style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
+              borderRadius:9,padding:"8px 12px",color:C.tx,fontSize:13,
+              outline:"none",boxSizing:"border-box"}}/>
         </div>
-        {/* Tabs */}
-        <div style={{display:"flex",gap:3,margin:"0 16px 12px",
-          background:C.surf,borderRadius:10,padding:3}}>
-          {[{id:"text",l:"💬 Text"},{id:"template",l:"📋 Template"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              flex:1,padding:"8px 0",borderRadius:8,border:"none",
-              background:tab===t.id?C.g1:"transparent",
-              color:tab===t.id?"#000":C.txs,
-              fontSize:13,fontWeight:700,cursor:"pointer"}}>
-              {t.l}
+
+        {/* Filter tabs */}
+        <div style={{display:"flex",gap:4,padding:"8px 10px",overflowX:"auto",
+          borderBottom:`1px solid ${C.border}`}}>
+          {filters.map(f=>(
+            <button key={f.id} onClick={()=>setFilter(f.id)} style={{
+              padding:"5px 11px",borderRadius:20,border:"none",flexShrink:0,
+              background:filter===f.id?C.g1:C.surf,
+              color:filter===f.id?"#000":C.txs,
+              fontSize:11,fontWeight:700,cursor:"pointer",
+              display:"flex",alignItems:"center",gap:4}}>
+              {f.label}
+              {counts[f.id]>0&&(
+                <span style={{fontSize:9,padding:"0 5px",borderRadius:10,
+                  background:filter===f.id?"rgba(0,0,0,.2)":C.border,
+                  color:filter===f.id?"#000":C.txs}}>{counts[f.id]}</span>
+              )}
             </button>
           ))}
         </div>
-        {/* Content */}
-        <div style={{flex:1,overflowY:"auto",padding:"0 16px"}}>
-          {tab==="text" && <>
-            <textarea ref={textRef}
-              style={{...IS,minHeight:100,resize:"none",lineHeight:1.6}}
-              placeholder="Type your message…"
-              value={msg} onChange={e=>setMsg(e.target.value)}
-              maxLength={4096}
-              onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.ctrlKey){e.preventDefault();send();}}}/>
-            <p style={{fontSize:11,color:C.txd,marginTop:4}}>{msg.length}/4096 · Enter to send</p>
-          </>}
-          {tab==="template" && <>
-            <div style={{marginBottom:10}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>
-                Template ({approved.length} approved)
-              </label>
-              <select style={IS} value={tplId}
-                onChange={e=>{setTplId(e.target.value);setTplP({});}}>
-                <option value="">— select a template —</option>
-                {approved.map(t=>(
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-            {tpl && <>
-              <div style={{background:C.surf,borderRadius:8,padding:10,
-                border:`1px solid ${C.border}`,marginBottom:10,
-                fontSize:12,color:C.txs,lineHeight:1.6,whiteSpace:"pre-wrap"}}>
-                {tpl.body}
-              </div>
-              {tpl.params.map((p,i)=>(
-                <div key={i} style={{marginBottom:10}}>
-                  <label style={{display:"block",fontSize:11,fontWeight:700,
-                    color:C.txs,textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>
-                    {`{{${i+1}}}`} — {p}
-                  </label>
-                  <input style={IS} placeholder={`Enter ${p}`}
-                    value={tplP[i]||""}
-                    onChange={e=>setTplP({...tplP,[i]:e.target.value})}/>
-                </div>
-              ))}
-              {tpl.params.length===0&&(
-                <p style={{fontSize:12,color:C.txd,marginBottom:10}}>
-                  No variables — ready to send as-is.
-                </p>
-              )}
-            </>}
-          </>}
-          {err && (
-            <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,
-              background:`${C.red}10`,border:`1px solid ${C.red}30`,
-              color:C.red,fontSize:13,fontWeight:600}}>
-              ✕ {err}
+
+        {/* List */}
+        <div style={{flex:1,overflowY:"auto"}}>
+          {convos.length===0&&(
+            <div style={{textAlign:"center",padding:"40px 20px",color:C.txd}}>
+              <div style={{fontSize:36,marginBottom:8}}>📭</div>
+              <p style={{fontSize:13}}>No conversations</p>
             </div>
           )}
-        </div>
-        {/* Send button */}
-        <div style={{padding:"12px 16px 32px",display:"flex",gap:10}}>
-          <button onClick={onClose} style={{padding:"12px 20px",borderRadius:10,
-            border:`1px solid ${C.border}`,background:"transparent",
-            color:C.txs,fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}>
-            Cancel
-          </button>
-          <button onClick={send}
-            disabled={loading||(tab==="text"?!msg.trim():!tpl)}
-            style={{flex:1,padding:"12px",borderRadius:10,border:"none",
-              background:loading||(tab==="text"?!msg.trim():!tpl)
-                ?C.border:`linear-gradient(135deg,${C.g1},${C.g2})`,
-              color:loading||(tab==="text"?!msg.trim():!tpl)?C.txd:"#000",
-              fontWeight:800,fontSize:14,cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {loading ? (
-              <><div style={{width:16,height:16,border:`2px solid rgba(0,0,0,.2)`,
-                borderTopColor:"#000",borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
-              Sending…</>
-            ) : "⚡ Send"}
-          </button>
-        </div>
-      </div>
-      <style>{`
-        @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:none;opacity:1}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-      `}</style>
-    </div>
-  );
-}
-
-/* ── Main Inbox ── */
-export default function Inbox() {
-  const [convos,    setConvos]   = useState([]);
-  const [selected,  setSelected] = useState(null);
-  const [messages,  setMessages] = useState([]);
-  const [compose,   setCompose]  = useState(false);
-  const [search,    setSearch]   = useState("");
-  const [loadMsg,   setLoadMsg]  = useState(false);
-  const endRef   = useRef();
-  const pollRef  = useRef();
-  const msgPoll  = useRef();
-
-  const loadConvos = async () => {
-    const r = await fetch("/api/inbox");
-    const d = await r.json();
-    setConvos(d.conversations||[]);
-  };
-
-  useEffect(() => {
-    loadConvos();
-    pollRef.current = setInterval(loadConvos, 5000);
-    return () => clearInterval(pollRef.current);
-  }, []);
-
-  const selectConvo = async (c) => {
-    setSelected(c);
-    setLoadMsg(true);
-    clearInterval(msgPoll.current);
-    const loadMsgs = async () => {
-      const r = await fetch(`/api/inbox/${encodeURIComponent(c.phone)}`);
-      const d = await r.json();
-      setMessages(d.messages||[]);
-      setLoadMsg(false);
-    };
-    await loadMsgs();
-    msgPoll.current = setInterval(loadMsgs, 4000);
-  };
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({behavior:"smooth"});
-  }, [messages]);
-
-  useEffect(() => {
-    return () => clearInterval(msgPoll.current);
-  }, []);
-
-  const handleSent = (msg) => {
-    setCompose(false);
-    setMessages(prev=>[...prev, msg]);
-    loadConvos();
-  };
-
-  const [checking, setChecking] = useState(false);
-
-  const checkStatus = async () => {
-    if (!selected) return;
-    setChecking(true);
-    try {
-      const r = await fetch(`/api/messages/status?phone=${encodeURIComponent(selected.phone)}`);
-      const d = await r.json();
-      if (d.messages?.length) {
-        // Merge updated statuses into messages
-        setMessages(prev => prev.map(m => {
-          const updated = d.messages.find(u => u._id?.toString() === m._id?.toString());
-          return updated ? { ...m, status: updated.status } : m;
-        }));
-      }
-    } catch {}
-    setChecking(false);
-  };
-
-  const goBack = () => {
-    setSelected(null);
-    clearInterval(msgPoll.current);
-    setMessages([]);
-    loadConvos();
-  };
-
-  const filtered = convos.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search)
-  );
-
-  const totalUnread = convos.reduce((a,c)=>a+(c.unread||0),0);
-
-  const statusIcon = s => s==="read"?"👁":s==="delivered"?"✓✓":s==="sent"?"✓":s==="failed"?"✕":"";
-  const statusColor= s => ({read:C.g1,delivered:C.teal,sent:C.blue,failed:C.red})[s]||C.txd;
-
-  /* ── Chat View ── */
-  if (selected) return (
-    <div style={{
-      display:"flex", flexDirection:"column",
-      height:"100%", background:C.waBg,
-      // On mobile: take full viewport over the bottom nav
-      position:"fixed", inset:0, zIndex:40,
-    }}>
-      {/* Chat header */}
-      <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,
-        padding:"10px 14px",display:"flex",alignItems:"center",
-        gap:12,flexShrink:0}}>
-        <button onClick={goBack} style={{background:"none",border:"none",
-          color:C.txs,fontSize:22,cursor:"pointer",padding:"0 4px 0 0",
-          lineHeight:1,flexShrink:0}}>←</button>
-        <Avatar name={selected.name} size={40}/>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontWeight:800,fontSize:15,overflow:"hidden",
-            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selected.name||selected.phone}</div>
-          <div style={{fontSize:11,color:C.txs,fontFamily:"'JetBrains Mono',monospace",
-            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            {selected.phone}
-          </div>
-        </div>
-        <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-          {/* AI Mode toggle */}
-          <select
-            defaultValue={selected?.aiMode||"auto"}
-            onChange={async e=>{
-              await fetch("/api/contacts/ai-mode",{method:"POST",
-                headers:{"Content-Type":"application/json"},
-                body:JSON.stringify({phone:selected.phone,mode:e.target.value})});
-            }}
-            style={{padding:"5px 8px",borderRadius:8,border:`1px solid ${C.border}`,
-              background:C.surf,color:C.txs,fontSize:11,fontWeight:700,cursor:"pointer",outline:"none"}}>
-            <option value="auto">🤖 AI Auto</option>
-            <option value="draft">✏️ AI Draft</option>
-            <option value="human">👤 Human</option>
-          </select>
-          <button onClick={checkStatus} disabled={checking}
-            style={{padding:"7px 10px",borderRadius:20,border:`1px solid ${C.border}`,
-              background:"transparent",color:checking?C.txd:C.teal,
-              fontWeight:700,fontSize:12,cursor:"pointer"}}>
-            {checking?"⏳":"↻"}
-          </button>
-          <button onClick={()=>setCompose(true)}
-            style={{padding:"8px 14px",borderRadius:20,border:"none",
-              background:`linear-gradient(135deg,${C.g1},${C.g2})`,
-              color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-            ✉ Reply
-          </button>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div style={{flex:1,overflowY:"auto",padding:"12px 14px",
-        display:"flex",flexDirection:"column",gap:4}}>
-        {loadMsg && (
-          <p style={{textAlign:"center",color:C.txd,fontSize:13,padding:20}}>
-            Loading messages…
-          </p>
-        )}
-        {!loadMsg && messages.length===0 && (
-          <div style={{textAlign:"center",color:C.txd,marginTop:60}}>
-            <div style={{fontSize:40,marginBottom:10}}>🙏</div>
-            <p style={{fontWeight:600,color:C.txs}}>No messages yet</p>
-            <p style={{fontSize:13,marginTop:4}}>
-              Tap <strong style={{color:C.g1}}>✉ Reply</strong> to start
-            </p>
-          </div>
-        )}
-
-        {/* Date grouping */}
-        {messages.map((m, i) => {
-          const isOut  = m.direction==="outbound";
-          const showDate = i===0 ||
-            new Date(m.sentAt).toDateString() !==
-            new Date(messages[i-1].sentAt).toDateString();
-          const timeStr = new Date(m.sentAt).toLocaleTimeString([],
-            {hour:"2-digit",minute:"2-digit"});
-          const dateStr = new Date(m.sentAt).toLocaleDateString("en-IN",
-            {day:"numeric",month:"short",year:"numeric"});
-
-          return (
-            <div key={m._id||i}>
-              {/* Date separator */}
-              {showDate && (
-                <div style={{display:"flex",alignItems:"center",
-                  gap:10,margin:"10px 0",padding:"0 4px"}}>
-                  <div style={{flex:1,height:1,background:C.border}}/>
-                  <span style={{fontSize:11,color:C.txd,fontWeight:600,
-                    padding:"2px 10px",borderRadius:20,
-                    background:C.card,border:`1px solid ${C.border}`,
-                    whiteSpace:"nowrap"}}>
-                    {dateStr}
-                  </span>
-                  <div style={{flex:1,height:1,background:C.border}}/>
-                </div>
-              )}
-
-              {/* Message bubble */}
-              <div style={{display:"flex",
-                justifyContent:isOut?"flex-end":"flex-start",
-                marginBottom:2,alignItems:"flex-end",gap:6}}>
-                {!isOut && (
-                  <Avatar name={selected.name} size={26}/>
-                )}
-                <div style={{
-                  maxWidth:"75%",
-                  padding:"8px 12px 6px",
-                  borderRadius:isOut?"18px 18px 4px 18px":"18px 18px 18px 4px",
-                  background:isOut
-                    ?`linear-gradient(135deg,${C.g2},${C.g1})`
-                    :C.card,
-                  border:isOut?"none":`1px solid ${C.border}`,
-                  boxShadow:"0 1px 4px rgba(0,0,0,.3)",
-                }}>
-                  {/* Image */}
-                  {m.type==="image"&&m.mediaUrl&&(
-                    <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
-                      <img src={m.mediaUrl} alt="Photo"
-                        style={{width:"100%",maxWidth:220,borderRadius:8,
-                          display:"block",marginBottom:4,cursor:"pointer"}}
-                        onError={e=>{e.target.style.display="none";}}/>
-                    </a>
-                  )}
-                  {/* Video */}
-                  {m.type==="video"&&m.mediaUrl&&(
-                    <video controls style={{width:"100%",maxWidth:220,
-                      borderRadius:8,display:"block",marginBottom:4}}>
-                      <source src={m.mediaUrl} type={m.mimeType||"video/mp4"}/>
-                    </video>
-                  )}
-                  {/* Audio */}
-                  {m.type==="audio"&&m.mediaUrl&&(
-                    <audio controls style={{width:"100%",marginBottom:4,
-                      maxWidth:220,display:"block"}}>
-                      <source src={m.mediaUrl} type={m.mimeType||"audio/ogg"}/>
-                    </audio>
-                  )}
-                  {/* Document */}
-                  {m.type==="document"&&m.mediaUrl&&(
-                    <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer"
-                      style={{display:"flex",alignItems:"center",gap:8,
-                        padding:"8px 10px",borderRadius:8,marginBottom:4,textDecoration:"none",
-                        background:isOut?"rgba(0,0,0,.15)":"rgba(255,255,255,.08)"}}>
-                      <span style={{fontSize:24}}>📄</span>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,
-                          color:isOut?"#000":C.tx}}>
-                          {m.body||"Document"}
-                        </div>
-                        <div style={{fontSize:10,color:isOut?"rgba(0,0,0,.5)":C.txs}}>
-                          Tap to open
-                        </div>
-                      </div>
-                    </a>
-                  )}
-                  {/* Sticker */}
-                  {m.type==="sticker"&&m.mediaUrl&&(
-                    <img src={m.mediaUrl} alt="Sticker"
-                      style={{width:80,height:80,display:"block",marginBottom:4}}
-                      onError={e=>{e.target.style.display="none";}}/>
-                  )}
-                  {/* Text body — show for all types */}
-                  {(m.body && (m.type==="text" || m.type==="button" ||
-                    m.type==="interactive" || m.type==="location" ||
-                    m.type==="contacts" || m.type==="template" ||
-                    (!m.mediaUrl && m.body))) && (
-                    <p style={{
-                      fontSize:14,lineHeight:1.55,margin:0,
-                      color:isOut?"#000":C.tx,
-                      whiteSpace:"pre-wrap",wordBreak:"break-word",
-                    }}>{m.body}</p>
-                  )}
-                  {/* Caption for media with text */}
-                  {m.body && m.mediaUrl &&
-                    (m.type==="image"||m.type==="video") &&
-                    m.body!=="📷 Photo" && m.body!=="🎥 Video" && (
-                    <p style={{fontSize:13,margin:"4px 0 0",
-                      color:isOut?"rgba(0,0,0,.7)":C.txs,
-                      whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                      {m.body}
-                    </p>
-                  )}
-                  {/* AI badge */}
-                  {m.isAiGenerated && (
-                    <div style={{fontSize:9,color:isOut?"rgba(0,0,0,.5)":C.txd,
-                      marginBottom:2,fontWeight:700}}>🤖 AI</div>
-                  )}
-                  {/* Time + status */}
-                  <div style={{display:"flex",alignItems:"center",
-                    justifyContent:"flex-end",gap:5,marginTop:4}}>
-                    <span style={{fontSize:11,
-                      color:isOut?"rgba(0,0,0,.5)":C.txd}}>
-                      {timeStr}
+          {convos.map(c=>{
+            const active=selected?.phone===c.phone;
+            return (
+              <div key={c.phone} onClick={()=>openConvo(c)} style={{
+                padding:"11px 14px",cursor:"pointer",display:"flex",gap:11,
+                background:active?`${C.g1}0e`:"transparent",
+                borderLeft:`3px solid ${active?C.g1:"transparent"}`,
+                borderBottom:`1px solid ${C.border}66`}}>
+                <Avatar name={c.name||c.phone} size={44}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:6,marginBottom:2}}>
+                    <span style={{fontWeight:c.unreadCount>0?800:600,fontSize:14,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {c.name||c.phone}
                     </span>
-                    {isOut && (
-                      <span style={{
-                        display:"inline-flex",alignItems:"center",gap:3,
-                        fontSize:11,fontWeight:700,
-                        color:statusColor(m.status),
-                      }}>
-                        {m.status==="read"      && <span title="Read">👁 Read</span>}
-                        {m.status==="delivered" && <span title="Delivered">✓✓ Delivered</span>}
-                        {m.status==="sent"      && <span title="Sent">✓ Sent</span>}
-                        {m.status==="failed"    && <span title="Failed">✕ Failed</span>}
-                        {m.status==="pending"   && <span title="Pending">⏳</span>}
+                    <span style={{fontSize:10,color:C.txd,flexShrink:0}}>{relTime(c.lastMessageAt)}</span>
+                  </div>
+                  <div style={{fontSize:12,color:c.unreadCount>0?C.txs:C.txd,
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:4}}>
+                    {c.lastMessageDir==="outbound"&&<span style={{color:C.g1}}>You: </span>}
+                    {c.lastMessageText||"No messages"}
+                  </div>
+                  <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+                    <StatusPill status={c.status}/>
+                    {c.assignedTo?(
+                      <span style={{fontSize:9,padding:"1px 7px",borderRadius:20,
+                        background:`${C.teal}18`,color:C.teal,fontWeight:700}}>
+                        {c.assignedTo.split("@")[0].split(" ")[0]}
                       </span>
+                    ):(
+                      <span style={{fontSize:9,padding:"1px 7px",borderRadius:20,
+                        background:`${C.txd}22`,color:C.txd,fontWeight:700}}>unassigned</span>
                     )}
+                    {c.aiMode==="auto"&&<span style={{fontSize:9}}>🤖</span>}
+                    {(c.labels||[]).slice(0,2).map(l=>(
+                      <span key={l} style={{fontSize:9,padding:"1px 6px",borderRadius:20,
+                        background:`${C.purple}18`,color:C.purple}}>{l}</span>
+                    ))}
                   </div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
-        <div ref={endRef}/>
-      </div>
-
-      {/* Quick reply bar */}
-      <div style={{background:C.card,borderTop:`1px solid ${C.border}`,
-        padding:"8px 14px 16px",flexShrink:0,
-        paddingBottom:"max(16px,env(safe-area-inset-bottom,16px))"}}>
-        <button onClick={()=>setCompose(true)}
-          style={{width:"100%",padding:"11px 16px",borderRadius:12,
-            border:`1px solid ${C.border}`,background:C.surf,
-            color:C.txd,fontSize:14,textAlign:"left",cursor:"pointer",
-            display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span>Type a message…</span>
-          <span style={{fontSize:18,color:C.g1}}>➤</span>
-        </button>
-      </div>
-
-      {compose && (
-        <ComposeSheet
-          contact={selected}
-          onSent={handleSent}
-          onClose={()=>setCompose(false)}
-        />
-      )}
-    </div>
-  );
-
-  /* ── Conversation List ── */
-  return (
-    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      {/* Header */}
-      <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,
-        padding:"12px 14px",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",
-          justifyContent:"space-between",marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <h1 style={{fontSize:18,fontWeight:800}}>💬 Inbox</h1>
-            {totalUnread>0 && (
-              <span style={{background:C.g1,color:"#000",fontSize:11,
-                fontWeight:800,padding:"1px 8px",borderRadius:20}}>
-                {totalUnread}
-              </span>
-            )}
-          </div>
-          <button onClick={loadConvos}
-            style={{background:"none",border:"none",
-              color:C.txs,fontSize:18,cursor:"pointer"}}>↻</button>
-        </div>
-        {/* Search */}
-        <input
-          style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
-            borderRadius:10,padding:"9px 13px",color:C.tx,fontSize:13,
-            outline:"none",boxSizing:"border-box"}}
-          placeholder="🔍  Search conversations…"
-          value={search} onChange={e=>setSearch(e.target.value)}/>
-      </div>
-
-      {/* Conversation list */}
-      <div style={{flex:1,overflowY:"auto"}}>
-        {filtered.length===0 ? (
-          <div style={{textAlign:"center",padding:"48px 20px",color:C.txd}}>
-            <div style={{fontSize:44,marginBottom:12}}>💬</div>
-            <p style={{fontWeight:600,color:C.txs,fontSize:15}}>No conversations yet</p>
-            <p style={{fontSize:13,marginTop:6,lineHeight:1.6,maxWidth:240,margin:"8px auto 0"}}>
-              Configure your Flaxxa webhook to receive incoming WhatsApp messages here
-            </p>
-          </div>
-        ) : filtered.map(c => {
-          const active = selected?.phone===c.phone;
-          return (
-            <div key={c.phone} onClick={()=>selectConvo(c)} style={{
-              padding:"13px 14px",cursor:"pointer",
-              display:"flex",gap:12,alignItems:"center",
-              background:active?`${C.g1}08`:"transparent",
-              borderLeft:`3px solid ${active?C.g1:"transparent"}`,
-              borderBottom:`1px solid ${C.border}`,
-              transition:"background .12s",
-            }}>
-              <div style={{position:"relative"}}>
-                <Avatar name={c.name} size={48}/>
-                {c.unread>0 && (
-                  <span style={{position:"absolute",top:-2,right:-2,
-                    width:18,height:18,borderRadius:"50%",
-                    background:C.g1,color:"#000",
-                    fontSize:10,fontWeight:800,
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    border:`2px solid ${C.surf}`}}>
-                    {c.unread > 9 ? "9+" : c.unread}
-                  </span>
+                {c.unreadCount>0&&(
+                  <div style={{minWidth:18,height:18,borderRadius:9,background:C.g1,
+                    color:"#000",fontSize:10,fontWeight:800,display:"flex",
+                    alignItems:"center",justifyContent:"center",padding:"0 5px",
+                    alignSelf:"center"}}>{c.unreadCount}</div>
                 )}
               </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ===== MIDDLE: Chat Thread ===== */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,
+        ...(mobileView==="list"?{}:{}),
+      }} className="chat-panel">
+        {!selected?(
+          <div style={{flex:1,display:"flex",flexDirection:"column",
+            alignItems:"center",justifyContent:"center",color:C.txd}}>
+            <div style={{fontSize:52,marginBottom:12}}>💬</div>
+            <p style={{fontSize:15,fontWeight:600,color:C.txs}}>Select a conversation</p>
+            <p style={{fontSize:13,marginTop:4}}>Choose from the list to start chatting</p>
+          </div>
+        ):(
+          <>
+            {/* Chat header */}
+            <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,
+              background:C.card,display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>{setSelected(null);setMobileView("list");}}
+                className="mobile-back" style={{background:"none",border:"none",
+                color:C.txs,fontSize:20,cursor:"pointer",display:"none"}}>←</button>
+              <Avatar name={selected.name||selected.phone} size={40}/>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",justifyContent:"space-between",
-                  alignItems:"center",marginBottom:3}}>
-                  <span style={{fontWeight:c.unread>0?800:600,fontSize:15,
-                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                    flex:1,paddingRight:8}}>
-                    {c.name||c.phone}
-                  </span>
-                  <span style={{fontSize:11,color:C.txd,flexShrink:0}}>
-                    {relTime(c.lastTime)}
-                  </span>
-                </div>
-                <div style={{fontSize:13,color:c.unread>0?C.txs:C.txd,
-                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                  fontWeight:c.unread>0?600:400}}>
-                  {c.lastDir==="outbound"&&(
-                    <span style={{color:C.g1,marginRight:3}}>You:</span>
-                  )}
-                  {c.lastMessage==="📷 Photo"    ? "📷 Photo"
-                  :c.lastMessage==="🎥 Video"    ? "🎥 Video"
-                  :c.lastMessage==="🎵 Voice message" ? "🎵 Voice message"
-                  :c.lastMessage||"No messages yet"}
+                <div style={{fontWeight:800,fontSize:15,overflow:"hidden",
+                  textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selected.name||selected.phone}</div>
+                <div style={{fontSize:11,color:C.txs}}>{selected.phone}</div>
+              </div>
+              {/* Quick actions */}
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                {convoData?.status!=="resolved"?(
+                  <button onClick={()=>updateConvo({status:"resolved"})}
+                    style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.g1}44`,
+                      background:`${C.g1}12`,color:C.g1,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    ✓ Resolve
+                  </button>
+                ):(
+                  <button onClick={()=>updateConvo({status:"open"})}
+                    style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.border}`,
+                      background:"transparent",color:C.txs,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    ↺ Reopen
+                  </button>
+                )}
+                <button onClick={()=>setShowInfo(s=>!s)}
+                  style={{padding:"6px 10px",borderRadius:8,border:`1px solid ${C.border}`,
+                    background:showInfo?C.surf:"transparent",color:C.txs,fontSize:14,cursor:"pointer"}}>
+                  ⓘ
+                </button>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div style={{flex:1,overflowY:"auto",padding:"14px 16px",
+              display:"flex",flexDirection:"column",gap:3}}>
+              {messages.map((m,i)=>{
+                const isOut=m.direction==="outbound";
+                const showDate=i===0||new Date(m.sentAt).toDateString()!==new Date(messages[i-1].sentAt).toDateString();
+                return (
+                  <div key={m._id||i}>
+                    {showDate&&(
+                      <div style={{textAlign:"center",margin:"12px 0"}}>
+                        <span style={{fontSize:11,color:C.txd,padding:"3px 12px",
+                          borderRadius:20,background:C.card,border:`1px solid ${C.border}`}}>
+                          {new Date(m.sentAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+                        </span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:isOut?"flex-end":"flex-start",marginBottom:2}}>
+                      <div style={{maxWidth:"70%",padding:"8px 12px 6px",
+                        borderRadius:isOut?"16px 16px 4px 16px":"16px 16px 16px 4px",
+                        background:isOut?`linear-gradient(135deg,${C.g2},${C.g1})`:C.card,
+                        border:isOut?"none":`1px solid ${C.border}`}}>
+                        {m.isAiGenerated&&<div style={{fontSize:9,fontWeight:700,
+                          color:isOut?"rgba(0,0,0,.5)":C.txd,marginBottom:2}}>🤖 AI</div>}
+                        {m.type==="image"&&m.mediaUrl&&(
+                          <img src={m.mediaUrl} style={{maxWidth:200,borderRadius:8,
+                            marginBottom:4,display:"block"}} onError={e=>e.target.style.display="none"}/>
+                        )}
+                        <p style={{fontSize:14,lineHeight:1.5,margin:0,
+                          color:isOut?"#000":C.tx,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.body}</p>
+                        <div style={{display:"flex",gap:5,justifyContent:"flex-end",
+                          alignItems:"center",marginTop:3}}>
+                          {m.agentName&&isOut&&<span style={{fontSize:9,
+                            color:"rgba(0,0,0,.4)"}}>{m.agentName.split(" ")[0]}</span>}
+                          <span style={{fontSize:10,color:isOut?"rgba(0,0,0,.45)":C.txd}}>
+                            {new Date(m.sentAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+                          </span>
+                          {isOut&&<span style={{fontSize:11,color:
+                            m.status==="read"?"#4fc3f7":m.status==="delivered"?"rgba(0,0,0,.5)":"rgba(0,0,0,.4)"}}>
+                            {m.status==="read"?"✓✓":m.status==="delivered"?"✓✓":"✓"}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={endRef}/>
+            </div>
+
+            {/* Composer with reply/note tabs */}
+            <div style={{borderTop:`1px solid ${C.border}`,background:C.card}}>
+              <div style={{display:"flex",gap:2,padding:"6px 12px 0"}}>
+                {[{id:"reply",l:"💬 Reply"},{id:"note",l:"📝 Internal Note"}].map(t=>(
+                  <button key={t.id} onClick={()=>setTab(t.id)} style={{
+                    padding:"6px 14px",borderRadius:"8px 8px 0 0",border:"none",
+                    background:tab===t.id?(t.id==="note"?`${C.amber}18`:C.surf):"transparent",
+                    color:tab===t.id?(t.id==="note"?C.amber:C.tx):C.txs,
+                    fontSize:12,fontWeight:700,cursor:"pointer"}}>{t.l}</button>
+                ))}
+              </div>
+              <div style={{padding:"10px 12px 12px",
+                background:tab==="note"?`${C.amber}08`:"transparent"}}>
+                {tab==="reply"?(
+                  <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                    <textarea value={msgText} onChange={e=>setMsgText(e.target.value)}
+                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}
+                      placeholder="Type a message… (/ for quick replies)"
+                      rows={1} style={{flex:1,background:C.surf,border:`1px solid ${C.border}`,
+                        borderRadius:10,padding:"10px 13px",color:C.tx,fontSize:14,
+                        outline:"none",resize:"none",fontFamily:"inherit",maxHeight:120}}/>
+                    <button onClick={sendMessage} disabled={sending||!msgText.trim()}
+                      style={{padding:"10px 18px",borderRadius:10,border:"none",
+                        background:sending||!msgText.trim()?C.border:`linear-gradient(135deg,${C.g1},${C.g2})`,
+                        color:sending||!msgText.trim()?C.txd:"#000",fontWeight:800,
+                        fontSize:14,cursor:"pointer"}}>➤</button>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                    <textarea value={noteText} onChange={e=>setNoteText(e.target.value)}
+                      placeholder="Add internal note (only agents see this)…"
+                      rows={1} style={{flex:1,background:C.surf,border:`1px solid ${C.amber}44`,
+                        borderRadius:10,padding:"10px 13px",color:C.tx,fontSize:14,
+                        outline:"none",resize:"none",fontFamily:"inherit",maxHeight:120}}/>
+                    <button onClick={addNote} disabled={!noteText.trim()}
+                      style={{padding:"10px 18px",borderRadius:10,border:"none",
+                        background:!noteText.trim()?C.border:C.amber,
+                        color:!noteText.trim()?C.txd:"#000",fontWeight:800,
+                        fontSize:13,cursor:"pointer"}}>Save Note</button>
+                  </div>
+                )}
+                {/* Quick replies */}
+                {tab==="reply"&&msgText.startsWith("/")&&quickReplies.length>0&&(
+                  <div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {quickReplies.filter(q=>q.shortcut.includes(msgText.slice(1))).map(q=>(
+                      <button key={q._id} onClick={()=>setMsgText(q.message)}
+                        style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${C.border}`,
+                          background:C.surf,color:C.txs,fontSize:11,cursor:"pointer"}}>
+                        {q.shortcut} — {q.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ===== RIGHT: Contact Info + Actions ===== */}
+      {selected&&showInfo&&(
+        <div style={{width:300,flexShrink:0,borderLeft:`1px solid ${C.border}`,
+          background:C.card,overflowY:"auto",display:"flex",flexDirection:"column"}}
+          className="info-panel">
+          {/* Contact card */}
+          <div style={{padding:"20px 16px",textAlign:"center",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
+              <Avatar name={selected.name||selected.phone} size={64}/>
+            </div>
+            <div style={{fontWeight:800,fontSize:16}}>{selected.name||selected.phone}</div>
+            <div style={{fontSize:12,color:C.txs,marginTop:2}}>{selected.phone}</div>
+            <a href={`tel:${selected.phone}`} style={{display:"inline-block",marginTop:10,
+              padding:"6px 16px",borderRadius:20,border:`1px solid ${C.border}`,
+              color:C.teal,fontSize:12,fontWeight:700,textDecoration:"none"}}>📞 Call</a>
+          </div>
+
+          {/* Assignment */}
+          <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Assigned Agent</label>
+            <select value={convoData?.assignedTo||""}
+              onChange={e=>updateConvo({assignedTo:e.target.value})}
+              style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
+                borderRadius:9,padding:"9px 12px",color:C.tx,fontSize:13,outline:"none"}}>
+              <option value="">Unassigned</option>
+              {agents.map(a=>(
+                <option key={a.email} value={a.name}>{a.name} ({a.role})</option>
+              ))}
+            </select>
+            <button onClick={()=>updateConvo({assignedTo:me})}
+              style={{width:"100%",marginTop:8,padding:"8px",borderRadius:9,border:"none",
+                background:`${C.teal}18`,color:C.teal,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              Assign to me
+            </button>
+          </div>
+
+          {/* Status + Priority */}
+          <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Status</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+              {["open","pending","resolved"].map(s=>(
+                <button key={s} onClick={()=>updateConvo({status:s})} style={{
+                  padding:"5px 12px",borderRadius:20,border:"none",
+                  background:convoData?.status===s?STATUS_COLORS[s]:C.surf,
+                  color:convoData?.status===s?"#000":C.txs,
+                  fontSize:11,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{s}</button>
+              ))}
+            </div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>Priority</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {["low","normal","high","urgent"].map(p=>(
+                <button key={p} onClick={()=>updateConvo({priority:p})} style={{
+                  padding:"5px 11px",borderRadius:20,border:`1px solid ${convoData?.priority===p?PRIORITY_COLORS[p]:C.border}`,
+                  background:convoData?.priority===p?`${PRIORITY_COLORS[p]}1e`:"transparent",
+                  color:convoData?.priority===p?PRIORITY_COLORS[p]:C.txs,
+                  fontSize:11,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{p}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* AI Mode */}
+          <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>AI Mode</label>
+            <div style={{display:"flex",gap:5}}>
+              {[{v:"auto",l:"🤖 Auto"},{v:"draft",l:"✏️ Draft"},{v:"human",l:"👤 Human"}].map(m=>(
+                <button key={m.v} onClick={()=>{
+                  updateConvo({aiMode:m.v});
+                  fetch("/api/contacts/ai-mode",{method:"POST",headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify({phone:selected.phone,mode:m.v})});
+                }} style={{
+                  flex:1,padding:"7px 4px",borderRadius:8,border:"none",
+                  background:convoData?.aiMode===m.v?C.g1:C.surf,
+                  color:convoData?.aiMode===m.v?"#000":C.txs,
+                  fontSize:11,fontWeight:700,cursor:"pointer"}}>{m.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Internal Notes */}
+          <div style={{padding:"14px 16px",flex:1}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:10}}>
+              📝 Internal Notes ({convoData?.notes?.length||0})
+            </label>
+            {(convoData?.notes||[]).length===0&&(
+              <p style={{fontSize:12,color:C.txd}}>No notes yet. Switch to "Internal Note" tab to add one.</p>
+            )}
+            {(convoData?.notes||[]).slice().reverse().map((n,i)=>(
+              <div key={i} style={{background:`${C.amber}0c`,border:`1px solid ${C.amber}22`,
+                borderRadius:8,padding:"8px 10px",marginBottom:8}}>
+                <p style={{fontSize:12,color:C.tx,margin:0,lineHeight:1.5}}>{n.text}</p>
+                <div style={{fontSize:10,color:C.txd,marginTop:4}}>
+                  {n.author} · {relTime(n.createdAt)}
                 </div>
               </div>
-              {/* Unread dot */}
-              {c.unread>0 && (
-                <div style={{width:10,height:10,borderRadius:"50%",
-                  background:C.g1,flexShrink:0}}/>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @media (max-width:768px){
+          .convo-list{width:100%!important;}
+          .chat-panel{display:${mobileView==="chat"?"flex":"none"}!important;}
+          .info-panel{display:none!important;}
+          .mobile-back{display:block!important;}
+        }
+      `}</style>
     </div>
   );
 }

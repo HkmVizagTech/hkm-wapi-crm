@@ -138,6 +138,23 @@ export async function POST(req) {
             { upsert:true, new:true }
           );
 
+          // Sync Conversation record for team inbox
+          await Conversation.findOneAndUpdate(
+            { phone },
+            {
+              $set:{
+                name: contactName,
+                lastMessageAt: timestamp,
+                lastMessageText: bodyText.slice(0,100),
+                lastMessageDir: "inbound",
+                status: "open",  // reopen on new message
+              },
+              $inc:{ unreadCount:1 },
+              $setOnInsert:{ phone, createdAt:new Date(), aiMode:"auto" },
+            },
+            { upsert:true }
+          );
+
           // AI processing — only for inbound text/button messages
           // Skip if contact is in human mode or do-not-contact
           const aiMode = contact?.aiMode || "auto";

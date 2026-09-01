@@ -14,6 +14,7 @@ const S = new mongoose.Schema({
   campaignId:   { type:mongoose.Schema.Types.ObjectId, ref:"Campaign" },
   sentAt:       { type:Date, default:Date.now },
   isAiGenerated:{ type:Boolean, default:false },
+  agentName:    String,
   deliveredAt:  Date,
   readAt:       Date,
 });
