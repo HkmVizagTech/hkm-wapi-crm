@@ -15,6 +15,7 @@ const S = new mongoose.Schema({
   sentAt:       { type:Date, default:Date.now },
   isAiGenerated:{ type:Boolean, default:false },
   agentName:    String,
+  provider:     { type:String, default:"flaxxa" },
   deliveredAt:  Date,
   readAt:       Date,
 });
