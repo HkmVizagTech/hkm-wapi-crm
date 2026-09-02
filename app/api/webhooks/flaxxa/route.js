@@ -162,7 +162,8 @@ export async function POST(req) {
             type === "text" &&
             aiMode === "auto" &&
             !contact?.doNotContact &&
-            process.env.GEMINI_API_KEY
+            process.env.GEMINI_API_KEY &&
+            process.env.AI_ENABLED === "true"   // master switch — OFF by default
           ) {
             // Get last 6 messages for context
             const history = await Message.find({ contactPhone:phone })

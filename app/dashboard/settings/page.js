@@ -286,7 +286,24 @@ export default function Settings() {
           </label>
           <div style={{background:C.surf,borderRadius:8,padding:"9px 13px",
             border:`1px solid ${C.border}`,fontSize:12,color:C.txd,fontFamily:"monospace"}}>
-            {process.env.GEMINI_API_KEY ? "✅ Configured" : "⚠️ Not set — add GEMINI_API_KEY to Railway env vars"}
+            {process.env.GEMINI_API_KEY ? "✅ API Key Configured" : "⚠️ Not set"}
+          </div>
+        </div>
+
+        {/* Master switch status */}
+        <div style={{padding:"11px 14px",borderRadius:9,marginBottom:12,
+          background:process.env.AI_ENABLED==="true"?`${C.g1}0e`:`${C.amber}0e`,
+          border:`1px solid ${process.env.AI_ENABLED==="true"?C.g1:C.amber}33`}}>
+          <div style={{fontSize:13,fontWeight:700,
+            color:process.env.AI_ENABLED==="true"?C.g1:C.amber}}>
+            {process.env.AI_ENABLED==="true"
+              ? "🟢 AI Auto-Reply is ACTIVE"
+              : "🟡 AI Auto-Reply is OFF (integrated but not active)"}
+          </div>
+          <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
+            {process.env.AI_ENABLED==="true"
+              ? "Incoming messages get automatic AI replies where mode is set to Auto."
+              : "To turn ON: set AI_ENABLED=true in Railway env vars. Until then, no auto-replies are sent."}
           </div>
         </div>
 

@@ -92,7 +92,7 @@ export async function POST(req) {
 
       // AI auto-reply
       const aiMode = contact?.aiMode || "auto";
-      if (msgType==="text" && aiMode==="auto" && !contact?.doNotContact && process.env.GEMINI_API_KEY) {
+      if (msgType==="text" && aiMode==="auto" && !contact?.doNotContact && process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true") {
         const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
         history.reverse();
         const { reply, action } = await processWithGemini(phone, contactName, bodyText, history);
