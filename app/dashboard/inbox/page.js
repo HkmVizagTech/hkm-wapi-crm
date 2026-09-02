@@ -121,7 +121,8 @@ export default function TeamInbox(){
     try{
       await fetch("/api/messages/send",{method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({phone:selected.phone,type:"text",message:text,contactName:selected.name})});
+        body:JSON.stringify({phone:selected.phone,type:"text",message:text,
+          contactName:selected.name,agentName:me,provider:convoData?.provider})});
       setMessages(p=>[...p,{_id:Date.now()+"",direction:"outbound",type:"text",
         body:text,status:"sent",sentAt:new Date().toISOString(),agentName:me}]);
     }catch{}
@@ -240,6 +241,11 @@ export default function TeamInbox(){
                         background:`${C.txd}22`,color:C.txd,fontWeight:700}}>unassigned</span>
                     )}
                     {c.aiMode==="auto"&&<span style={{fontSize:9}}>🤖</span>}
+                    <span style={{fontSize:9,padding:"1px 6px",borderRadius:20,fontWeight:700,
+                      background:c.provider==="gupshup"?`${C.orange}18`:`${C.g1}18`,
+                      color:c.provider==="gupshup"?C.orange:C.g1}}>
+                      {c.provider==="gupshup"?"Gupshup":"Flaxxa"}
+                    </span>
                     {(c.labels||[]).slice(0,2).map(l=>(
                       <span key={l} style={{fontSize:9,padding:"1px 6px",borderRadius:20,
                         background:`${C.purple}18`,color:C.purple}}>{l}</span>
@@ -491,6 +497,32 @@ export default function TeamInbox(){
                   background:convoData?.aiMode===m.v?C.g1:C.surf,
                   color:convoData?.aiMode===m.v?"#000":C.txs,
                   fontSize:11,fontWeight:700,cursor:"pointer"}}>{m.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Provider Switcher */}
+          <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+              📡 Reply Via
+            </label>
+            <div style={{display:"flex",gap:6}}>
+              {[
+                {v:"flaxxa",  l:"Flaxxa",  sub:"90631 72108"},
+                {v:"gupshup", l:"Gupshup", sub:"70751 76108"},
+              ].map(p=>(
+                <button key={p.v} onClick={()=>updateConvo({provider:p.v})} style={{
+                  flex:1,padding:"8px 6px",borderRadius:9,cursor:"pointer",
+                  border:`2px solid ${convoData?.provider===p.v?C.g1:C.border}`,
+                  background:convoData?.provider===p.v?`${C.g1}0e`:C.surf,
+                  textAlign:"center"}}>
+                  <div style={{fontWeight:800,fontSize:12,
+                    color:convoData?.provider===p.v?C.g1:C.tx}}>
+                    {convoData?.provider===p.v?"✓ ":""}{p.l}
+                  </div>
+                  <div style={{fontSize:10,color:C.txs,marginTop:1}}>{p.sub}</div>
+                </button>
               ))}
             </div>
           </div>

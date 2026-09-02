@@ -148,6 +148,7 @@ export async function POST(req) {
                 lastMessageText: bodyText.slice(0,100),
                 lastMessageDir: "inbound",
                 status: "open",  // reopen on new message
+                provider: "flaxxa",  // this conversation came via Flaxxa
               },
               $inc:{ unreadCount:1 },
               $setOnInsert:{ phone, createdAt:new Date(), aiMode:"auto" },

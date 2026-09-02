@@ -23,6 +23,7 @@ const S = new mongoose.Schema({
 
   // AI
   aiMode:       { type:String, enum:["auto","draft","human"], default:"auto" },
+  provider:     { type:String, enum:["flaxxa","gupshup"], default:"flaxxa" },
 
   // Internal notes (agent-only)
   notes:        [NoteSchema],

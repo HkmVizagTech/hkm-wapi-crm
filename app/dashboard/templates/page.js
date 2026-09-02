@@ -20,6 +20,7 @@ function normalize(t){
 
 export default function Templates() {
   const [templates, setTemplates] = useState([]);
+  const [provider,  setProvider]  = useState("flaxxa");
   const [loading,   setLoading]   = useState(true);
   const [lastSync,  setLastSync]  = useState(null);
   const [search,    setSearch]    = useState("");
@@ -30,14 +31,14 @@ export default function Templates() {
   const fetchTpls = async (showLoad=true) => {
     if(showLoad) setLoading(true);
     try {
-      const r=await fetch("/api/templates");
+      const r=await fetch(`/api/templates?provider=${provider}`);
       const d=await r.json();
       if(d.templates?.length){setTemplates(d.templates.map(normalize));setLastSync(new Date());}
     } catch {}
     if(showLoad) setLoading(false);
   };
 
-  useEffect(()=>{fetchTpls();},[]);
+  useEffect(()=>{fetchTpls();},[provider]);
 
   const cats=["ALL",...new Set(templates.map(t=>t.category).filter(Boolean))];
   const list=templates.filter(t=>
@@ -50,7 +51,7 @@ export default function Templates() {
     <div style={{padding:16}}>
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",
-        alignItems:"flex-start",marginBottom:14}}>
+        alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
         <div>
           <h1 style={{fontSize:18,fontWeight:800}}>📋 Templates</h1>
           <p style={{fontSize:12,color:C.txs,marginTop:2}}>
@@ -58,7 +59,20 @@ export default function Templates() {
             {lastSync&&<span style={{marginLeft:6,color:C.txd}}>· {lastSync.toLocaleTimeString()}</span>}
           </p>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {/* Provider toggle */}
+          <div style={{display:"flex",gap:2,background:C.surf,borderRadius:9,padding:2,
+            border:`1px solid ${C.border}`}}>
+            {[{v:"flaxxa",l:"Flaxxa"},{v:"gupshup",l:"Gupshup"}].map(p=>(
+              <button key={p.v} onClick={()=>setProvider(p.v)} style={{
+                padding:"6px 12px",borderRadius:7,border:"none",
+                background:provider===p.v?C.g1:"transparent",
+                color:provider===p.v?"#000":C.txs,
+                fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                {p.l}
+              </button>
+            ))}
+          </div>
           <button onClick={()=>fetchTpls(true)} disabled={loading}
             style={{padding:"8px 12px",borderRadius:9,border:`1px solid ${C.border}`,
               background:loading?C.surf:`linear-gradient(135deg,${C.teal},#0097a7)`,
