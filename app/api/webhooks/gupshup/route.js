@@ -8,6 +8,7 @@ import Campaign         from "@/models/Campaign";
 import { processWithGemini } from "@/lib/gemini";
 import { executeAction }     from "@/lib/ai-actions";
 import { sendGupshupText }   from "@/lib/gupshup";
+import { BUILD_VERSION }     from "@/lib/version";
 
 export async function GET() {
   return NextResponse.json({ status:"Gupshup webhook active" });
@@ -101,7 +102,7 @@ export async function POST(req) {
           aiMode, aiActive,
           env:{ geminiKey:!!process.env.GEMINI_API_KEY, aiEnabled:process.env.AI_ENABLED, model:process.env.GEMINI_MODEL },
           msgType, doNotContact:!!contact?.doNotContact,
-          build:await (await import("@/lib/version.js")).BUILD_VERSION,
+          build:BUILD_VERSION,
         }}}
       );
       if (aiActive && (aiMode==="auto" || aiMode==="draft")) {
