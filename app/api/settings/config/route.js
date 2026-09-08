@@ -2,14 +2,15 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 
 export async function GET(req) {
-  const url = req.nextUrl || new URL(req.url);
-  const base = url.origin;
+  const proto = req.headers?.get?.("x-forwarded-proto") || "https";
+  const host  = req.headers?.get?.("host") || req.nextUrl?.host || "localhost:3000";
+  const base  = `${proto}://${host}`;
 
   return NextResponse.json({
     db:            !!process.env.MONGODB_URI,
     aiEnabled:     process.env.AI_ENABLED === "true",
     gemini:        !!process.env.GEMINI_API_KEY,
-    geminiModel:   process.env.GEMINI_MODEL || "gemini-flash-latest",
+    geminiModel:   process.env.GEMINI_MODEL || "gemini-3.6-flash",
     gupshup: {
       configured:  !!process.env.GUPSHUP_APIKEY,
       source:      process.env.GUPSHUP_SOURCE || "",
