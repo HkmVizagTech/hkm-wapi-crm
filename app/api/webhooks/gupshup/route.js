@@ -80,7 +80,7 @@ export async function POST(req) {
       const contact = await Contact.findOneAndUpdate(
         { phone },
         { $set:{ lastMessageAt:new Date(), name:contactName },
-          $setOnInsert:{ phone, name:contactName, addedAt:new Date() } },
+          $setOnInsert:{ phone, addedAt:new Date() } },
         { upsert:true, new:true }
       );
       dbg.contact = true;
