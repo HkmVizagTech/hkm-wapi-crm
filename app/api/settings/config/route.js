@@ -7,6 +7,7 @@ export async function GET(req) {
   const base  = `${proto}://${host}`;
 
   return NextResponse.json({
+    version:       (await import("@/lib/version.js")).BUILD_VERSION,
     db:            !!process.env.MONGODB_URI,
     aiEnabled:     process.env.AI_ENABLED === "true",
     gemini:        !!process.env.GEMINI_API_KEY,

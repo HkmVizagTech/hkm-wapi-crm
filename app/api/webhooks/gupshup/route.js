@@ -95,6 +95,15 @@ export async function POST(req) {
       const aiMode = contact?.aiMode || "auto";
       const aiActive = msgType==="text" && !contact?.doNotContact &&
                        process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
+      await Message.updateOne(
+        { wamid },
+        { $set:{ meta:{
+          aiMode, aiActive,
+          env:{ geminiKey:!!process.env.GEMINI_API_KEY, aiEnabled:process.env.AI_ENABLED, model:process.env.GEMINI_MODEL },
+          msgType, doNotContact:!!contact?.doNotContact,
+          build:await (await import("@/lib/version.js")).BUILD_VERSION,
+        }}}
+      );
       if (aiActive && (aiMode==="auto" || aiMode==="draft")) {
         try {
           const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
