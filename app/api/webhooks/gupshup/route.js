@@ -96,28 +96,38 @@ export async function POST(req) {
       const aiActive = msgType==="text" && !contact?.doNotContact &&
                        process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
       if (aiActive && (aiMode==="auto" || aiMode==="draft")) {
-        const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
-        history.reverse();
-        const { reply, action } = await processWithGemini(phone, contactName, bodyText, history);
-        if (action) await executeAction(action, { phone, contactName, message:bodyText, provider:"gupshup" });
-        if (reply) {
-          if (aiMode === "auto") {
-            const sent = await sendGupshupText(phone, reply);
-            await Message.create({
-              contactPhone:phone, contactName, direction:"outbound",
-              type:"text", body:reply, status: sent.ok ? "sent" : "failed",
-              sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
-              wamid:sent.wamid||"",
-            });
-          } else {
-            // Draft mode — save AI suggestion, staff approves/sends in inbox
-            await Message.create({
-              contactPhone:phone, contactName, direction:"outbound",
-              type:"text", body:reply, status:"draft",
-              sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
-            });
-            console.log("✏️ AI draft saved for:", phone);
+        try {
+          const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
+          history.reverse();
+          const { reply, action } = await processWithGemini(phone, contactName, bodyText, history);
+          if (action) await executeAction(action, { phone, contactName, message:bodyText, provider:"gupshup" });
+          if (reply) {
+            if (aiMode === "auto") {
+              const sent = await sendGupshupText(phone, reply);
+              await Message.create({
+                contactPhone:phone, contactName, direction:"outbound",
+                type:"text", body:reply, status: sent.ok ? "sent" : "failed",
+                sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
+                wamid:sent.wamid||"",
+              });
+            } else {
+              // Draft mode — save AI suggestion, staff approves/sends in inbox
+              await Message.create({
+                contactPhone:phone, contactName, direction:"outbound",
+                type:"text", body:reply, status:"draft",
+                sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
+              });
+              console.log("✏️ AI draft saved for:", phone);
+            }
           }
+        } catch(aiErr) {
+          console.error(`🤖 AI pipeline error for ${phone}:`, aiErr.message);
+          await Message.create({
+            contactPhone:phone, contactName, direction:"outbound",
+            type:"text", body:"[AI pipeline error]", status:"failed",
+            sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
+            meta:{ aiError:aiErr.message },
+          });
         }
       }
     }

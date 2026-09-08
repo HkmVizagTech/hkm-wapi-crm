@@ -18,6 +18,7 @@ const S = new mongoose.Schema({
   provider:     { type:String, default:"flaxxa" },
   deliveredAt:  Date,
   readAt:       Date,
+  meta:         { type:mongoose.Schema.Types.Mixed },
 });
 S.index({ contactPhone:1, sentAt:-1 });
 S.index({ wamid:1 }, { unique:true, sparse:true });
