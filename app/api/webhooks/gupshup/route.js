@@ -15,15 +15,17 @@ export async function GET() {
 }
 
 export async function POST(req) {
+  const dbg = {};
   try {
     await connectDB();
+    dbg.conn = true;
     const body = await req.json();
 
     // Gupshup payload structure
     const type    = body?.type;              // "message" | "message-event"
     const payload = body?.payload;
 
-    if (!payload) return NextResponse.json({ ok:true });
+    if (!payload) return NextResponse.json({ ok:true, debug:dbg });
 
     /* ── Incoming message ── */
     if (type === "message") {
@@ -73,6 +75,7 @@ export async function POST(req) {
         }},
         { upsert:true }
       );
+      dbg.stored = true;
 
       const contact = await Contact.findOneAndUpdate(
         { phone },
@@ -80,6 +83,7 @@ export async function POST(req) {
           $setOnInsert:{ phone, name:contactName, addedAt:new Date() } },
         { upsert:true, new:true }
       );
+      dbg.contact = true;
 
       // Sync Conversation
       await Conversation.findOneAndUpdate(
@@ -91,6 +95,7 @@ export async function POST(req) {
           $setOnInsert:{ phone, createdAt:new Date(), aiMode:"auto" } },
         { upsert:true }
       );
+      dbg.conversation = true;
 
       // AI auto-reply / draft
       const aiMode = contact?.aiMode || "auto";
@@ -105,6 +110,11 @@ export async function POST(req) {
           build:BUILD_VERSION,
         }}}
       );
+      dbg.meta = true;
+      dbg.aiMode = aiMode;
+      dbg.aiActive = aiActive;
+      dbg.env = { geminiKey:!!process.env.GEMINI_API_KEY, aiEnabled:process.env.AI_ENABLED, model:process.env.GEMINI_MODEL };
+      dbg.build = BUILD_VERSION;
       if (aiActive && (aiMode==="auto" || aiMode==="draft")) {
         try {
           const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
@@ -164,9 +174,10 @@ export async function POST(req) {
       }
     }
 
-    return NextResponse.json({ ok:true });
+    return NextResponse.json({ ok:true, debug:dbg });
   } catch(e) {
     console.error("Gupshup webhook error:", e.message);
-    return NextResponse.json({ ok:true });
+    dbg.error = e.message;
+    return NextResponse.json({ ok:true, debug:dbg });
   }
 }
