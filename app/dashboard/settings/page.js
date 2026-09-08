@@ -17,6 +17,7 @@ const IS = {
 export default function Settings() {
   const [forwards, setForwards] = useState([]);
   const [users,    setUsers]    = useState([]);
+  const [cfg,      setCfg]      = useState(null);
   const [uForm,    setUForm]    = useState({ name:"",email:"",password:"",role:"viewer" });
   const [uSaving,  setUSaving]  = useState(false);
   const [loading,  setLoading]  = useState(true);
@@ -39,6 +40,7 @@ export default function Settings() {
   useEffect(()=>{
     load();
     fetch("/api/users").then(r=>r.json()).then(d=>setUsers(d.users||[]));
+    fetch("/api/settings/config").then(r=>r.json()).then(d=>setCfg(d||{}));
   },[]);
 
   const addForward = async () => {
@@ -109,15 +111,20 @@ export default function Settings() {
           📡 Your Webhook URL
         </div>
         <p style={{fontSize:12,color:C.txs,marginBottom:10,lineHeight:1.6}}>
-          Configure this URL in your Flaxxa WAPI dashboard to receive WhatsApp events.
+          Configure these URLs in Gupshup and Flaxxa dashboards to receive WhatsApp events.
         </p>
-        <div style={{background:C.surf,borderRadius:8,padding:"10px 14px",
-          fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:C.g1,
-          border:`1px solid ${C.border}`,wordBreak:"break-all"}}>
-          https://hkm-wapi-crm-production.up.railway.app/api/webhooks/flaxxa
-        </div>
+        {[{name:"Gupshup", url:cfg?.webhooks?.gupshup},{name:"Flaxxa", url:cfg?.webhooks?.flaxxa}].map(w=>(
+          <div key={w.name} style={{marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.txs,marginBottom:4}}>{w.name}</div>
+            <div style={{background:C.surf,borderRadius:8,padding:"10px 14px",
+              fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:C.g1,
+              border:`1px solid ${C.border}`,wordBreak:"break-all"}}>
+              {w.url}
+            </div>
+          </div>
+        ))}
         <div style={{marginTop:10,fontSize:12,color:C.txs}}>
-          Verify token: <code style={{color:C.amber}}>hkm_vizag_webhook_2025</code>
+          Flaxxa verify token: <code style={{color:C.amber}}>hkm_vizag_webhook_2025</code>
         </div>
       </div>
 
@@ -285,23 +292,29 @@ export default function Settings() {
             Gemini API Key (set in Railway env: GEMINI_API_KEY)
           </label>
           <div style={{background:C.surf,borderRadius:8,padding:"9px 13px",
-            border:`1px solid ${C.border}`,fontSize:12,color:C.txd,fontFamily:"monospace"}}>
-            {process.env.GEMINI_API_KEY ? "✅ API Key Configured" : "⚠️ Not set"}
+            border:`1px solid ${C.border}`,fontSize:12,color:cfg?.gemini?C.g1:C.red,
+            fontFamily:"monospace"}}>
+            {cfg?.gemini ? "✅ API Key Configured" : "⚠️ Not set — AI will not reply"}
           </div>
+          {cfg?.geminiModel&&(
+            <div style={{fontSize:11,color:C.txs,marginTop:4}}>
+              Model: {cfg.geminiModel}
+            </div>
+          )}
         </div>
 
         {/* Master switch status */}
         <div style={{padding:"11px 14px",borderRadius:9,marginBottom:12,
-          background:process.env.AI_ENABLED==="true"?`${C.g1}0e`:`${C.amber}0e`,
-          border:`1px solid ${process.env.AI_ENABLED==="true"?C.g1:C.amber}33`}}>
+          background:cfg?.aiEnabled?`${C.g1}0e`:`${C.amber}0e`,
+          border:`1px solid ${cfg?.aiEnabled?C.g1:C.amber}33`}}>
           <div style={{fontSize:13,fontWeight:700,
-            color:process.env.AI_ENABLED==="true"?C.g1:C.amber}}>
-            {process.env.AI_ENABLED==="true"
+            color:cfg?.aiEnabled?C.g1:C.amber}}>
+            {cfg?.aiEnabled
               ? "🟢 AI Auto-Reply is ACTIVE"
               : "🟡 AI Auto-Reply is OFF (integrated but not active)"}
           </div>
           <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
-            {process.env.AI_ENABLED==="true"
+            {cfg?.aiEnabled
               ? "Incoming messages get automatic AI replies where mode is set to Auto."
               : "To turn ON: set AI_ENABLED=true in Railway env vars. Until then, no auto-replies are sent."}
           </div>

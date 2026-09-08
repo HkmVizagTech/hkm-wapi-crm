@@ -129,6 +129,22 @@ export default function TeamInbox(){
     setSending(false);
   };
 
+  const approveDraft = async (m) => {
+    try{
+      await fetch("/api/messages/send",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({phone:selected.phone,type:"text",message:m.body,
+          contactName:selected.name,agentName:me,provider:convoData?.provider,draftId:m._id})});
+      setMessages(p=>p.map(x=>x._id===m._id?{...x,status:"sent",agentName:me}:x));
+    }catch{}
+  };
+
+  const discardDraft = async (m) => {
+    if(!window.confirm("Discard this AI draft?")) return;
+    await fetch(`/api/messages/draft/${m._id}`,{method:"DELETE"});
+    setMessages(p=>p.filter(x=>x._id!==m._id));
+  };
+
   const addNote = async()=>{
     if(!noteText.trim()||!selected) return;
     const text=noteText; setNoteText("");
@@ -332,15 +348,33 @@ export default function TeamInbox(){
                       <div style={{maxWidth:"70%",padding:"8px 12px 6px",
                         borderRadius:isOut?"16px 16px 4px 16px":"16px 16px 16px 4px",
                         background:isOut?`linear-gradient(135deg,${C.g2},${C.g1})`:C.card,
-                        border:isOut?"none":`1px solid ${C.border}`}}>
+                        border:isOut?"none":`1px solid ${C.border}`,
+                        ...(m.status==="draft"?{background:C.surf,border:`2px dashed ${C.amber}66`}:{})}}>
                         {m.isAiGenerated&&<div style={{fontSize:9,fontWeight:700,
                           color:isOut?"rgba(0,0,0,.5)":C.txd,marginBottom:2}}>🤖 AI</div>}
+                        {m.status==="draft"&&<div style={{fontSize:9,fontWeight:700,
+                          color:C.amber,marginBottom:2}}>✏️ DRAFT — awaiting approval</div>}
                         {m.type==="image"&&m.mediaUrl&&(
                           <img src={m.mediaUrl} style={{maxWidth:200,borderRadius:8,
                             marginBottom:4,display:"block"}} onError={e=>e.target.style.display="none"}/>
                         )}
                         <p style={{fontSize:14,lineHeight:1.5,margin:0,
                           color:isOut?"#000":C.tx,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.body}</p>
+                        {m.status==="draft"&&(
+                          <div style={{display:"flex",gap:6,marginTop:8}}>
+                            <button onClick={()=>approveDraft(m)}
+                              style={{flex:1,padding:"7px",borderRadius:8,border:"none",
+                                background:`linear-gradient(135deg,${C.g2},${C.g1})`,
+                                color:"#000",fontSize:12,fontWeight:800,cursor:"pointer"}}>
+                              ✓ Send
+                            </button>
+                            <button onClick={()=>discardDraft(m)}
+                              style={{flex:1,padding:"7px",borderRadius:8,border:`1px solid ${C.red}50`,
+                                background:"transparent",color:C.red,fontSize:12,fontWeight:800,cursor:"pointer"}}>
+                              ✕ Discard
+                            </button>
+                          </div>
+                        )}
                         <div style={{display:"flex",gap:5,justifyContent:"flex-end",
                           alignItems:"center",marginTop:3}}>
                           {m.agentName&&isOut&&<span style={{fontSize:9,

@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Message          from "@/models/Message";
 import Contact          from "@/models/Contact";
+import Conversation     from "@/models/Conversation";
 import Campaign         from "@/models/Campaign";
+import WebhookForward   from "@/models/WebhookForward";
+import { processWithGemini } from "@/lib/gemini";
+import { executeAction }     from "@/lib/ai-actions";
+import { sendText }          from "@/lib/flaxxa";
 
 async function forwardWebhook(payload, eventType) {
   try {
@@ -159,13 +164,9 @@ export async function POST(req) {
           // AI processing — only for inbound text/button messages
           // Skip if contact is in human mode or do-not-contact
           const aiMode = contact?.aiMode || "auto";
-          if (
-            type === "text" &&
-            aiMode === "auto" &&
-            !contact?.doNotContact &&
-            process.env.GEMINI_API_KEY &&
-            process.env.AI_ENABLED === "true"   // master switch — OFF by default
-          ) {
+          const aiActive = type === "text" && !contact?.doNotContact &&
+                           process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
+          if (aiActive && (aiMode === "auto" || aiMode === "draft")) {
             // Get last 6 messages for context
             const history = await Message.find({ contactPhone:phone })
               .sort({ sentAt:-1 }).limit(6).lean();
@@ -177,29 +178,39 @@ export async function POST(req) {
 
             // Execute any triggered action
             if (action) {
-              await executeAction(action, { phone, contactName, message:bodyText });
+              await executeAction(action, { phone, contactName, message:bodyText, provider:"flaxxa" });
             }
 
-            // Auto-reply via Flaxxa
-            if (reply && aiMode === "auto") {
-              const replyToken = process.env.FLAXXA_TOKEN;
-              await fetch("https://wapi.flaxxa.com/api/v1/sendSessionMessage", {
-                method:"POST",
-                headers:{ "Content-Type":"application/json" },
-                body: JSON.stringify({ token:replyToken, phone, message:reply }),
-              }).catch(()=>{});
-
-              // Save AI reply to messages
-              await Message.create({
-                contactPhone: phone,
-                contactName,
-                direction:    "outbound",
-                type:         "text",
-                body:         reply,
-                status:       "sent",
-                sentAt:       new Date(),
-                isAiGenerated: true,
-              });
+            // Auto-reply via Flaxxa / save as draft
+            if (reply) {
+              if (aiMode === "auto") {
+                await sendText(phone, reply);
+                await Message.create({
+                  contactPhone: phone,
+                  contactName,
+                  direction:    "outbound",
+                  type:         "text",
+                  body:         reply,
+                  status:       "sent",
+                  sentAt:       new Date(),
+                  isAiGenerated: true,
+                  provider:     "flaxxa",
+                });
+              } else {
+                // Draft mode — save AI suggestion, staff approves/sends in inbox
+                await Message.create({
+                  contactPhone: phone,
+                  contactName,
+                  direction:    "outbound",
+                  type:         "text",
+                  body:         reply,
+                  status:       "draft",
+                  sentAt:       new Date(),
+                  isAiGenerated: true,
+                  provider:     "flaxxa",
+                });
+                console.log("✏️ AI draft saved for:", phone);
+              }
             }
           }
         }

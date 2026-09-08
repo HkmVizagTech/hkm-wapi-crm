@@ -8,7 +8,7 @@ import { sendGupshupText, sendGupshupTemplate } from "@/lib/gupshup";
 
 export async function POST(req) {
   await connectDB();
-  const { phone, type, message, templateName, templateLang, params, contactName, agentName, provider } = await req.json();
+  const { phone, type, message, templateName, templateLang, params, contactName, agentName, provider, draftId } = await req.json();
 
   // Determine provider: explicit override > conversation's stored provider > default flaxxa
   let useProvider = provider;
@@ -37,6 +37,13 @@ export async function POST(req) {
   if (!ok) return NextResponse.json({ error:data?.error||data?.message||"Send failed" }, { status:400 });
 
   const wamid = isGupshup ? (data?.wamid||data?.messageId||"") : (data?.message_wamid||String(data?.message_id||""));
+
+  // If sending an approved AI draft, mark it as sent
+  if (draftId) {
+    await Message.findByIdAndUpdate(draftId, {
+      $set:{ status:"sent", sentAt:new Date(), agentName, wamid: wamid||"" },
+    });
+  }
 
   await Message.create({
     contactPhone: phone, contactName, type,

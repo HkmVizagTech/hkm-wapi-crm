@@ -13,7 +13,8 @@ export async function GET() {
     interested:  await Contact.countDocuments({ aiStatus:"interested" }),
     needsHuman:  await Contact.countDocuments({ aiStatus:"needs_human" }),
     doNotContact:await Contact.countDocuments({ doNotContact:true }),
-    aiEnabled:   !!process.env.GEMINI_API_KEY,
+    aiEnabled:   process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true",
+    aiConfigured:!!process.env.GEMINI_API_KEY,
   };
   return NextResponse.json(stats);
 }

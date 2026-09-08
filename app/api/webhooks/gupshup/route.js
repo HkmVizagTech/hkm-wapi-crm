@@ -7,6 +7,7 @@ import Conversation     from "@/models/Conversation";
 import Campaign         from "@/models/Campaign";
 import { processWithGemini } from "@/lib/gemini";
 import { executeAction }     from "@/lib/ai-actions";
+import { sendGupshupText }   from "@/lib/gupshup";
 
 export async function GET() {
   return NextResponse.json({ status:"Gupshup webhook active" });
@@ -90,33 +91,33 @@ export async function POST(req) {
         { upsert:true }
       );
 
-      // AI auto-reply
+      // AI auto-reply / draft
       const aiMode = contact?.aiMode || "auto";
-      if (msgType==="text" && aiMode==="auto" && !contact?.doNotContact && process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true") {
+      const aiActive = msgType==="text" && !contact?.doNotContact &&
+                       process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
+      if (aiActive && (aiMode==="auto" || aiMode==="draft")) {
         const history = await Message.find({ contactPhone:phone }).sort({ sentAt:-1 }).limit(6).lean();
         history.reverse();
         const { reply, action } = await processWithGemini(phone, contactName, bodyText, history);
-        if (action) await executeAction(action, { phone, contactName, message:bodyText });
+        if (action) await executeAction(action, { phone, contactName, message:bodyText, provider:"gupshup" });
         if (reply) {
-          // Reply via Gupshup session message
-          const gbody = new URLSearchParams({
-            channel:"whatsapp",
-            source: process.env.GUPSHUP_SOURCE||"917075176108",
-            destination: phone,
-            "src.name": process.env.GUPSHUP_APPNAME||"4KoeJVChI420QyWVhAW1kE7L",
-            message: JSON.stringify({ type:"text", text:reply }),
-          });
-          await fetch("https://api.gupshup.io/wa/api/v1/msg", {
-            method:"POST",
-            headers:{ "apikey":process.env.GUPSHUP_APIKEY||"sk_0381bd5a455746478c53899f213f838b",
-                      "Content-Type":"application/x-www-form-urlencoded" },
-            body: gbody.toString(),
-          }).catch(()=>{});
-          await Message.create({
-            contactPhone:phone, contactName, direction:"outbound",
-            type:"text", body:reply, status:"sent", sentAt:new Date(),
-            isAiGenerated:true, provider:"gupshup",
-          });
+          if (aiMode === "auto") {
+            const sent = await sendGupshupText(phone, reply);
+            await Message.create({
+              contactPhone:phone, contactName, direction:"outbound",
+              type:"text", body:reply, status: sent.ok ? "sent" : "failed",
+              sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
+              wamid:sent.wamid||"",
+            });
+          } else {
+            // Draft mode — save AI suggestion, staff approves/sends in inbox
+            await Message.create({
+              contactPhone:phone, contactName, direction:"outbound",
+              type:"text", body:reply, status:"draft",
+              sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
+            });
+            console.log("✏️ AI draft saved for:", phone);
+          }
         }
       }
     }

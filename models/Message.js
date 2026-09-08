@@ -9,7 +9,7 @@ const S = new mongoose.Schema({
   mimeType:     String,
   templateName: String,
   params:       [String],
-  status:       { type:String, enum:["sent","delivered","read","failed","received"], default:"sent" },
+  status:       { type:String, enum:["sent","delivered","read","failed","received","draft"], default:"sent" },
   wamid:        String,
   campaignId:   { type:mongoose.Schema.Types.ObjectId, ref:"Campaign" },
   sentAt:       { type:Date, default:Date.now },
