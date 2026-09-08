@@ -121,12 +121,17 @@ export async function POST(req) {
           history.reverse();
           const { reply, action } = await processWithGemini(phone, contactName, bodyText, history);
           if (action) await executeAction(action, { phone, contactName, message:bodyText, provider:"gupshup" });
-          if (reply) {
+          let finalReply = reply;
+          if (action === "register_interest") {
+            if (!finalReply) finalReply = `Hare Krishna 🙏 You can donate here: https://harekrishnavizag.org/donate`;
+            else if (!finalReply.includes("harekrishnavizag.org/donate")) finalReply += `\n\nDonate here: https://harekrishnavizag.org/donate`;
+          }
+          if (finalReply) {
             if (aiMode === "auto") {
-              const sent = await sendGupshupText(phone, reply);
+              const sent = await sendGupshupText(phone, finalReply);
               await Message.create({
                 contactPhone:phone, contactName, direction:"outbound",
-                type:"text", body:reply, status: sent.ok ? "sent" : "failed",
+                type:"text", body:finalReply, status: sent.ok ? "sent" : "failed",
                 sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
                 wamid:sent.wamid||"",
               });
@@ -134,7 +139,7 @@ export async function POST(req) {
               // Draft mode — save AI suggestion, staff approves/sends in inbox
               await Message.create({
                 contactPhone:phone, contactName, direction:"outbound",
-                type:"text", body:reply, status:"draft",
+                type:"text", body:finalReply, status:"draft",
                 sentAt:new Date(), isAiGenerated:true, provider:"gupshup",
               });
               console.log("✏️ AI draft saved for:", phone);
