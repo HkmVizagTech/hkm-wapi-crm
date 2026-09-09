@@ -167,6 +167,15 @@ export async function POST(req) {
           const aiActive = type === "text" && !contact?.doNotContact &&
                            process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
           if (aiActive && (aiMode === "auto" || aiMode === "draft")) {
+            // Idempotency guard: claim the AI slot atomically so webhook
+            // re-deliveries (retries from the provider while we're doing the slow
+            // Gemini→Groq pipeline) don't run the AI twice and send duplicate replies.
+            const claim = await Message.findOneAndUpdate(
+              { wamid, aiRepliedAt: { $exists:false } },
+              { $set:{ aiRepliedAt:new Date() } },
+              { new:true }
+            );
+            if (!claim) continue; // already processed on a prior delivery
             // Get last 6 messages for context
             const history = await Message.find({ contactPhone:phone })
               .sort({ sentAt:-1 }).limit(6).lean();
