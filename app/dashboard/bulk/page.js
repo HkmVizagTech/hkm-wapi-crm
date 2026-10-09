@@ -1,7 +1,7 @@
 // rebuilt:1781482518 build:20260615000949
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { parseCSV, downloadCSV, relTime } from "@/lib/utils";
+import { parseCSV, downloadCSV, relTime, normalizePhone } from "@/lib/utils";
 
 function parseBody(s) {
   try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="BODY")?.text||""; } catch{}return "";
@@ -160,21 +160,23 @@ export default function BulkSend() {
 
     setSending(true); setStep(3);
 
-    const allContacts = csvRows.map(r => ({
-      phone:  normalizePhone(r.phone),
-      name:   r.name || r.phone,
-      params: getParams(r),
-    }));
-
-    const campBaseName = campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
-    const CHUNK  = 2000;
-    const chunks = [];
-    for (let i = 0; i < allContacts.length; i += CHUNK)
-      chunks.push(allContacts.slice(i, i + CHUNK));
-
-    setCampData({ status:"queued", totalContacts:allContacts.length, sent:0, failed:0 });
-
+    // Everything is inside try so any error returns to the preview step
+    // instead of leaving the page stuck on "Saving batches…"
     try {
+      const allContacts = csvRows.map(r => ({
+        phone:  normalizePhone(r.phone),
+        name:   r.name || r.phone,
+        params: getParams(r),
+      }));
+
+      const campBaseName = campName || `Bulk ${tpl.name} ${new Date().toLocaleDateString()}`;
+      const CHUNK  = 2000;
+      const chunks = [];
+      for (let i = 0; i < allContacts.length; i += CHUNK)
+        chunks.push(allContacts.slice(i, i + CHUNK));
+
+      setCampData({ status:"saving", totalContacts:allContacts.length, sent:0, failed:0 });
+
       const campaignIds = [];
 
       for (let ci = 0; ci < chunks.length; ci++) {
@@ -225,7 +227,7 @@ export default function BulkSend() {
       showToast("Error: " + e.message,"error");
       setSending(false); setStep(2);
     }
-  };;
+  };
 
   const total = campData?.totalContacts || csvRows.length || 1;
   const done  = (campData?.sent||0) + (campData?.failed||0);
