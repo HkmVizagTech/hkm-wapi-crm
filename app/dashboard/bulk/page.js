@@ -91,13 +91,16 @@ export default function BulkSend() {
       .catch(()=>{ setAllTemplates([]); setTplLoading(false); });
   }, [provider]);
 
-  const cats     = ["ALL", ...new Set(allTemplates.filter(t=>t.status==="APPROVED").map(t=>t.category).filter(Boolean))];
-  const approved = allTemplates.filter(t =>
-    t.status === "APPROVED" &&
+  const approvedAll = allTemplates.filter(t => t.status === "APPROVED");
+  const cats     = ["ALL", ...new Set(approvedAll.map(t=>t.category).filter(Boolean))];
+  const catCount = c => c === "ALL" ? approvedAll.length : approvedAll.filter(t=>t.category===c).length;
+  const q        = tplSearch.trim().toLowerCase();
+  const approved = approvedAll.filter(t =>
     (catFilter === "ALL" || t.category === catFilter) &&
-    (!tplSearch || t.name?.toLowerCase().includes(tplSearch.toLowerCase()))
+    (!q || t.name?.toLowerCase().includes(q) || t.body?.toLowerCase().includes(q))
   );
-  const tpl        = approved.find(t => t.id === tplId);
+  // Look up from the full list so the selection survives search/category changes
+  const tpl        = approvedAll.find(t => t.id === tplId);
   const hasHeader  = tpl?.header && ["IMAGE","DOCUMENT","VIDEO"].includes(String(tpl.header));
   const headerFmt  = hasHeader ? String(tpl.header) : null;
 
@@ -286,81 +289,126 @@ export default function BulkSend() {
             </div>
           </div>
           {tplLoading && (
-        <div style={{textAlign:"center",padding:40,color:C.txd}}>
-          <div style={{width:28,height:28,margin:"0 auto 10px",border:`3px solid ${C.border}`,
-            borderTopColor:C.g1,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
-          <p style={{fontSize:13}}>Loading templates from {provider==="gupshup"?"Gupshup":"Flaxxa"}…</p>
-        </div>
-      )}
-      {!tplLoading && <>
-        <p style={{fontSize:13,color:C.txs,marginBottom:12}}>
-          Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
-        </p>
-        <input style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
-          borderRadius:10,padding:"9px 13px",color:C.tx,fontSize:13,outline:"none",
-          boxSizing:"border-box",marginBottom:10}}
-          placeholder="🔍 Search templates…"
-          value={tplSearch} onChange={e=>setTplSearch(e.target.value)}/>
-        <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4,marginBottom:14}}>
-          {cats.map(c=>(
-            <button key={c} onClick={()=>setCatFilter(c)} style={{
-              padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,
-              background:catFilter===c?C.g1:C.surf,
-              color:catFilter===c?"#000":C.txs,
-              fontSize:11,fontWeight:700,cursor:"pointer"}}>
-              {c}
-            </button>
-          ))}
-        </div>
-        {approved.length===0&&(
-          <p style={{textAlign:"center",color:C.txd,padding:20,fontSize:13}}>
-            No templates match
-          </p>
-        )}
-      </>}
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {approved.map(t=>(
-              <div key={t.id} onClick={()=>setTplId(t.id)} style={{
-                background:tplId===t.id?"rgba(37,211,102,.06)":C.card,
-                border:`${tplId===t.id?2:1}px solid ${tplId===t.id?C.g1:C.border}`,
-                borderRadius:12,padding:16,cursor:"pointer",transition:"all .15s"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div style={{flex:1,paddingRight:8}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                      <span style={{fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-all"}}>{t.name}</span>
-                      {t.header&&["IMAGE","DOCUMENT","VIDEO"].includes(String(t.header))&&(
-                        <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
-                          background:`${C.blue}18`,color:C.blue,flexShrink:0}}>
-                          {t.header==="IMAGE"?"🖼 IMAGE":t.header==="DOCUMENT"?"📄 DOC":"🎥 VIDEO"}
-                        </span>
-                      )}
-                    </div>
-                    <p style={{fontSize:12,color:C.txs,lineHeight:1.5,marginBottom:6,
-                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
-                      {t.body}
-                    </p>
-                    {t.params.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                        {t.params.map((p,i)=>(
-                          <span key={i} style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
-                            background:`${C.blue}14`,color:C.blue}}>{`{{${i+1}}}`} {p}</span>
-                        ))}
+            <div style={{textAlign:"center",padding:40,color:C.txd}}>
+              <div style={{width:28,height:28,margin:"0 auto 10px",border:`3px solid ${C.border}`,
+                borderTopColor:C.g1,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
+              <p style={{fontSize:13}}>Loading templates from {provider==="gupshup"?"Gupshup":"Flaxxa"}…</p>
+            </div>
+          )}
+          {!tplLoading && <>
+            <p style={{fontSize:13,color:C.txs,marginBottom:12}}>
+              Select an approved template. CSV columns map to {"{{"}<span style={{color:C.blue}}>1</span>{"}}"} {"{{"}<span style={{color:C.blue}}>2</span>{"}}"} parameters.
+              <span style={{color:C.txd}}> Tip: double-click a template to continue straight away.</span>
+            </p>
+            <div style={{position:"relative",marginBottom:10}}>
+              <input style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
+                borderRadius:10,padding:"9px 34px 9px 13px",color:C.tx,fontSize:13,outline:"none",
+                boxSizing:"border-box"}}
+                placeholder="🔍 Search by template name or message text…"
+                value={tplSearch} onChange={e=>setTplSearch(e.target.value)}/>
+              {tplSearch&&(
+                <button onClick={()=>setTplSearch("")} title="Clear search" style={{
+                  position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+                  background:"none",border:"none",color:C.txs,fontSize:14,cursor:"pointer",padding:4}}>✕</button>
+              )}
+            </div>
+            <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4,marginBottom:10}}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setCatFilter(c)} style={{
+                  padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,
+                  background:catFilter===c?C.g1:C.surf,
+                  color:catFilter===c?"#000":C.txs,
+                  fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  {c} <span style={{opacity:.65}}>({catCount(c)})</span>
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.txd,marginBottom:8}}>
+              Showing {approved.length} of {approvedAll.length} approved templates
+            </div>
+
+            {/* Scrollable list — keeps the page short no matter how many templates exist */}
+            <div style={{maxHeight:"min(560px, 55vh)",overflowY:"auto",
+              border:`1px solid ${C.border}`,borderRadius:12,padding:8,background:C.surf}}>
+              {approved.length===0&&(
+                <p style={{textAlign:"center",color:C.txd,padding:20,fontSize:13}}>
+                  No templates match{tplSearch?` "${tplSearch}"`:""}
+                </p>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {approved.map(t=>{
+                  const sel = tplId===t.id;
+                  return (
+                    <div key={t.id} onClick={()=>setTplId(t.id)}
+                      onDoubleClick={()=>{setTplId(t.id);setStep(1);}}
+                      style={{
+                        background:sel?"rgba(37,211,102,.06)":C.card,
+                        border:`${sel?2:1}px solid ${sel?C.g1:C.border}`,
+                        borderRadius:10,padding:"10px 12px",cursor:"pointer",transition:"all .15s"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                            <span style={{fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-all"}}>{t.name}</span>
+                            {t.header&&["IMAGE","DOCUMENT","VIDEO"].includes(String(t.header))&&(
+                              <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
+                                background:`${C.blue}18`,color:C.blue,flexShrink:0}}>
+                                {t.header==="IMAGE"?"🖼 IMAGE":t.header==="DOCUMENT"?"📄 DOC":"🎥 VIDEO"}
+                              </span>
+                            )}
+                            {t.params.length>0&&(
+                              <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
+                                background:`${C.blue}14`,color:C.blue,flexShrink:0}}>
+                                {t.params.length} var{t.params.length>1?"s":""}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{fontSize:12,color:C.txs,lineHeight:1.5,
+                            overflow:"hidden",display:"-webkit-box",WebkitLineClamp:sel?4:1,WebkitBoxOrient:"vertical"}}>
+                            {t.body}
+                          </p>
+                          {sel&&(
+                            <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+                              <Btn ch="Use this template →" onClick={e=>{e.stopPropagation();setStep(1);}}
+                                sx={{padding:"7px 14px",fontSize:12}}/>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{width:20,height:20,borderRadius:"50%",flexShrink:0,
+                          border:`2px solid ${sel?C.g1:C.border}`,
+                          background:sel?C.g1:"transparent",
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                          fontSize:11,color:"#000",fontWeight:800}}>
+                          {sel?"✓":""}
+                        </div>
                       </div>
-                    )}
-                    {t.params.length===0&&<p style={{fontSize:11,color:C.txd}}>No variables — same message for all</p>}
-                  </div>
-                  <div style={{width:20,height:20,borderRadius:"50%",flexShrink:0,
-                    border:`2px solid ${tplId===t.id?C.g1:C.border}`,
-                    background:tplId===t.id?C.g1:"transparent",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:11,color:"#000",fontWeight:800}}>
-                    {tplId===t.id?"✓":""}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-          <div style={{marginTop:20,display:"flex",justifyContent:"flex-end"}}>
+            </div>
+          </>}
+
+          {/* Sticky action bar — Next is always visible, no scrolling needed */}
+          <div style={{position:"sticky",bottom:0,zIndex:5,marginTop:14,
+            padding:"12px 14px",borderRadius:12,
+            background:C.card,border:`1px solid ${tpl?C.g1:C.border}`,
+            boxShadow:"0 -8px 24px rgba(0,0,0,.45)",
+            display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div style={{minWidth:0,flex:1}}>
+              {tpl?(
+                <>
+                  <div style={{fontSize:10,fontWeight:700,color:C.txs,textTransform:"uppercase",letterSpacing:".5px"}}>Selected template</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+                    <span style={{fontWeight:800,fontSize:13,color:C.g1,fontFamily:"'JetBrains Mono',monospace",
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tpl.name}</span>
+                    <button onClick={()=>setTplId("")} title="Clear selection" style={{
+                      background:"none",border:"none",color:C.txd,fontSize:12,cursor:"pointer",padding:2,flexShrink:0}}>✕</button>
+                  </div>
+                </>
+              ):(
+                <span style={{fontSize:13,color:C.txd}}>Select a template to continue</span>
+              )}
+            </div>
             <Btn ch="Next: Upload CSV →" onClick={()=>tplId&&setStep(1)} disabled={!tplId}/>
           </div>
         </div>
