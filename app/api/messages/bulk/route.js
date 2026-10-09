@@ -54,6 +54,7 @@ export async function POST(req) {
       headerFormat,
       totalContacts: unique.length,
       delay,
+      provider:      provider === "gupshup" ? "gupshup" : "flaxxa",
       scheduledAt:   schedTime,
       status,
       // If all params identical, store once at top level

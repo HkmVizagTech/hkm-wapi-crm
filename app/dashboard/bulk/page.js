@@ -76,16 +76,20 @@ export default function BulkSend() {
   const [tplLoading,   setTplLoading]   = useState(true);
   const [catFilter,    setCatFilter]    = useState("ALL");
   const [tplSearch,    setTplSearch]    = useState("");
+  const [provider,     setProvider]     = useState("flaxxa");
 
   useEffect(() => {
-    fetch("/api/templates")
+    setTplLoading(true);
+    setTplId("");
+    setAllTemplates([]);
+    fetch(`/api/templates?provider=${provider}`)
       .then(r=>r.json())
       .then(d=>{
-        if(d.templates?.length) setAllTemplates(d.templates.map(normalizeTpl));
+        setAllTemplates(d.templates?.length ? d.templates.map(normalizeTpl) : []);
         setTplLoading(false);
       })
-      .catch(()=>setTplLoading(false));
-  }, []);
+      .catch(()=>{ setAllTemplates([]); setTplLoading(false); });
+  }, [provider]);
 
   const cats     = ["ALL", ...new Set(allTemplates.filter(t=>t.status==="APPROVED").map(t=>t.category).filter(Boolean))];
   const approved = allTemplates.filter(t =>
@@ -185,7 +189,7 @@ export default function BulkSend() {
             name: chunkName, templateName:tpl.name,
             templateLang:tpl.language||"en", contacts:chunk,
             delay, mediaUrl:mediaUrl?.startsWith("http")?mediaUrl:"",
-            headerFormat:headerFmt, scheduledAt,
+            headerFormat:headerFmt, scheduledAt, provider,
           }),
         });
 
@@ -257,11 +261,35 @@ export default function BulkSend() {
       {/* STEP 0 — Pick template */}
       {step===0&&(
         <div>
+          {/* Provider selector — must be chosen first because templates differ per provider */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+              📡 Sending Provider
+            </label>
+            <div style={{display:"flex",gap:8}}>
+              {[
+                {id:"flaxxa",  label:"Flaxxa WAPI",  sub:"+91 90631 72108"},
+                {id:"gupshup", label:"Gupshup",      sub:"+91 70751 76108"},
+              ].map(p=>(
+                <div key={p.id} onClick={()=>setProvider(p.id)} style={{
+                  flex:1,padding:"10px 14px",borderRadius:10,cursor:"pointer",
+                  border:`2px solid ${provider===p.id?C.g1:C.border}`,
+                  background:provider===p.id?`${C.g1}08`:C.surf,
+                  transition:"all .15s"}}>
+                  <div style={{fontWeight:800,fontSize:13,color:provider===p.id?C.g1:C.tx}}>
+                    {provider===p.id?"✓ ":""}{p.label}
+                  </div>
+                  <div style={{fontSize:11,color:C.txs,marginTop:2}}>{p.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
           {tplLoading && (
         <div style={{textAlign:"center",padding:40,color:C.txd}}>
           <div style={{width:28,height:28,margin:"0 auto 10px",border:`3px solid ${C.border}`,
             borderTopColor:C.g1,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
-          <p style={{fontSize:13}}>Loading templates from Flaxxa…</p>
+          <p style={{fontSize:13}}>Loading templates from {provider==="gupshup"?"Gupshup":"Flaxxa"}…</p>
         </div>
       )}
       {!tplLoading && <>
@@ -427,30 +455,14 @@ export default function BulkSend() {
               value={campName} onChange={e=>setCampName(e.target.value)}/>
           </div>
 
-          {/* Provider selector */}
-          <div style={{marginBottom:14}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-              textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
-              📡 Sending Provider
-            </label>
-            <div style={{display:"flex",gap:8}}>
-              {[
-                {id:"flaxxa",  label:"Flaxxa WAPI",  sub:"+91 90631 72108"},
-                {id:"gupshup", label:"Gupshup",      sub:"+91 70751 76108"},
-              ].map(p=>(
-                <div key={p.id} onClick={()=>setProvider(p.id)} style={{
-                  flex:1,padding:"10px 14px",borderRadius:10,cursor:"pointer",
-                  border:`2px solid ${provider===p.id?C.g1:C.border}`,
-                  background:provider===p.id?`${C.g1}08`:C.surf,
-                  transition:"all .15s",
-                }}>
-                  <div style={{fontWeight:800,fontSize:13,color:provider===p.id?C.g1:C.tx}}>
-                    {provider===p.id?"✓ ":""}{p.label}
-                  </div>
-                  <div style={{fontSize:11,color:C.txs,marginTop:2}}>{p.sub}</div>
-                </div>
-              ))}
-            </div>
+          {/* Provider (locked to the picked template — change it on the Template step) */}
+          <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,
+            background:C.card,border:`1px solid ${C.border}`,display:"flex",
+            justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.txs}}>📡 Sending via</span>
+            <span style={{fontWeight:800,fontSize:13,color:C.g1}}>
+              {provider==="gupshup"?"Gupshup · +91 70751 76108":"Flaxxa WAPI · +91 90631 72108"}
+            </span>
           </div>
 
           <div style={{marginBottom:16}}>
