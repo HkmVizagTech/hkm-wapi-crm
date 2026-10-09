@@ -115,6 +115,10 @@ export default function BulkSend() {
   const aiWillReply  = !!aiState?.active;
   const pauseAiOn    = aiWillReply && (pauseAi ?? csvRows.length >= 100);
 
+  // WhatsApp rejects WebP image headers (#131053)
+  const isWebp = u => /(\.webp(\?|#|$))|([\/,]f_webp[\/,])/i.test(String(u||""));
+  const mediaBlocked = hasHeader && headerFmt==="IMAGE" && isWebp(mediaUrl);
+
   const showToast = (m,t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
   const getParams = row => (tpl?.params||[]).map((_,i) => {
@@ -178,6 +182,10 @@ export default function BulkSend() {
   };
 
   const startBulk = async () => {
+    if (mediaBlocked) {
+      showToast("WhatsApp doesn't accept WebP images — use a JPG/PNG link","error");
+      return;
+    }
     if (hasHeader && mediaUrl && mediaUrl.startsWith("data:")) {
       showToast("Please upload the image to Media Library first","error");
       setSending(false); setStep(2); return;
@@ -498,6 +506,14 @@ export default function BulkSend() {
                     headerFmt==="DOCUMENT" ? "https://example.com/receipt.pdf" :
                     "https://example.com/video.mp4"
                   }/>
+              {headerFmt==="IMAGE" && isWebp(mediaUrl) && (
+                <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
+                  background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
+                  color:"#f44336",fontSize:12,fontWeight:600}}>
+                  ✕ WhatsApp doesn't accept WebP images. Use a JPG or PNG link — on Cloudinary just change
+                  {" "}<code>.webp</code> to <code>.jpg</code> at the end of the URL.
+                </div>
+              )}
               {mediaUrl && mediaUrl.startsWith("data:") && (
                 <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
                   background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
@@ -751,7 +767,7 @@ export default function BulkSend() {
                 ? `⏰ Schedule for ${schedDate} ${schedTime}`
                 : `🚀 Send to ${csvRows.length} Contacts Now`}
               onClick={startBulk}
-              disabled={hasHeader&&!mediaUrl||(schedule&&(!schedDate||!schedTime))}
+              disabled={hasHeader&&!mediaUrl||mediaBlocked||(schedule&&(!schedDate||!schedTime))}
               sx={{flex:1,justifyContent:"center"}}/>
           </div>
           {hasHeader&&!mediaUrl&&(

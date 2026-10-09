@@ -183,20 +183,18 @@ export async function POST(req) {
 
         await Message.findOneAndUpdate({ wamid:{ $in:ids } }, { $set:{ status } });
 
-        // Update campaign metrics
-        const camp = await Campaign.findOne({ "results.wamid":{ $in:ids } });
-        if (camp) {
-          const idx  = camp.results.findIndex(r=>ids.includes(r.wamid));
-          const prev = idx>-1 ? camp.results[idx].status : null;
-          let upd = null;
-          if (status==="delivered" && prev==="sent")
-            upd = { $set:{[`results.${idx}.status`]:"delivered"}, $inc:{delivered:1} };
-          if (status==="read" && prev!=="read" && prev!=="failed")
-            upd = { $set:{[`results.${idx}.status`]:"read"}, $inc:{read:1,...(prev==="sent"?{delivered:1}:{})} };
-          if (status==="failed" && prev!=="failed")
-            upd = { $set:{[`results.${idx}.status`]:"failed", [`results.${idx}.error`]:reason},
-                    $inc:{failed:1, ...(prev==="sent"?{sent:-1}:{})} };
-          if (upd) await Campaign.findByIdAndUpdate(camp._id, upd);
+        // Update campaign metrics with single atomic, indexed updates (results.wamid index).
+        // Never loads the campaign document — matters when 25k status events arrive at once.
+        const at = st => ({ results:{ $elemMatch:{ wamid:{ $in:ids }, status:st } } });
+        const upd = (st, $set, $inc) => Campaign.updateOne(at(st), { $set, $inc });
+        if (status==="delivered") {
+          await upd("sent", { "results.$.status":"delivered" }, { delivered:1 });
+        } else if (status==="read") {
+          const r = await upd("sent", { "results.$.status":"read" }, { read:1, delivered:1 });
+          if (!r.modifiedCount) await upd("delivered", { "results.$.status":"read" }, { read:1 });
+        } else if (status==="failed") {
+          const r = await upd("sent", { "results.$.status":"failed", "results.$.error":reason }, { failed:1, sent:-1 });
+          if (!r.modifiedCount) await upd("pending", { "results.$.status":"failed", "results.$.error":reason }, { failed:1 });
         }
       }
     }
