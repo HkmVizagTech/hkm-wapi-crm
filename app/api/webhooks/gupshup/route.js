@@ -169,22 +169,33 @@ export async function POST(req) {
 
     /* ── Message status event ── */
     if (type === "message-event") {
-      const wamid  = payload.id;
+      // Gupshup sends its own message ID in `id` for enqueued/failed events, but the
+      // WhatsApp ID in `id` (and its own ID in `gsId`) for sent/delivered/read.
+      // We store Gupshup's ID at send time, so match on both.
+      const ids    = [payload.id, payload.gsId].filter(Boolean);
       const status = { sent:"sent", delivered:"delivered", read:"read", failed:"failed" }[payload.type];
-      if (status && wamid) {
-        await Message.findOneAndUpdate({ wamid }, { $set:{ status } });
+      if (status && ids.length) {
+        const reason = status==="failed"
+          ? [payload.payload?.code, payload.payload?.reason].filter(Boolean).join(" — ") || "Failed (no reason given)"
+          : "";
+        if (status==="failed") console.error(`❌ Gupshup delivery failed ${ids.join("/")}: ${reason}`);
+
+        await Message.findOneAndUpdate({ wamid:{ $in:ids } }, { $set:{ status } });
+
         // Update campaign metrics
-        if (status==="delivered"||status==="read") {
-          const camp = await Campaign.findOne({ "results.wamid":wamid });
-          if (camp) {
-            const idx = camp.results.findIndex(r=>r.wamid===wamid);
-            if (idx>-1) {
-              const upd={ $set:{[`results.${idx}.status`]:status} };
-              if (status==="delivered"&&camp.results[idx].status==="sent") upd.$inc={delivered:1};
-              if (status==="read") upd.$inc={read:1,...(camp.results[idx].status==="sent"?{delivered:1}:{})};
-              await Campaign.findByIdAndUpdate(camp._id, upd);
-            }
-          }
+        const camp = await Campaign.findOne({ "results.wamid":{ $in:ids } });
+        if (camp) {
+          const idx  = camp.results.findIndex(r=>ids.includes(r.wamid));
+          const prev = idx>-1 ? camp.results[idx].status : null;
+          let upd = null;
+          if (status==="delivered" && prev==="sent")
+            upd = { $set:{[`results.${idx}.status`]:"delivered"}, $inc:{delivered:1} };
+          if (status==="read" && prev!=="read" && prev!=="failed")
+            upd = { $set:{[`results.${idx}.status`]:"read"}, $inc:{read:1,...(prev==="sent"?{delivered:1}:{})} };
+          if (status==="failed" && prev!=="failed")
+            upd = { $set:{[`results.${idx}.status`]:"failed", [`results.${idx}.error`]:reason},
+                    $inc:{failed:1, ...(prev==="sent"?{sent:-1}:{})} };
+          if (upd) await Campaign.findByIdAndUpdate(camp._id, upd);
         }
       }
     }
