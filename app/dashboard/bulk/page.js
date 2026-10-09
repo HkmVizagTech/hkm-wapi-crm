@@ -7,7 +7,10 @@ function parseBody(s) {
   try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="BODY")?.text||""; } catch{}return "";
 }
 function parseParams(s) {
-  const b=parseBody(s); return [...b.matchAll(/\{\{(\d+)\}\}/g)].map(m=>`Param ${m[1]}`);
+  // Count by the highest {{n}} so repeated variables aren't double-counted
+  const nums=[...parseBody(s).matchAll(/\{\{(\d+)\}\}/g)].map(m=>Number(m[1]));
+  const max=nums.length?Math.max(...nums):0;
+  return Array.from({length:max},(_,i)=>`Param ${i+1}`);
 }
 function parseHeader(s) {
   try { const c=typeof s==="string"?JSON.parse(s):s; if(Array.isArray(c))return c.find(x=>x.type==="HEADER")?.format||null; }catch{}return null;
@@ -123,6 +126,29 @@ export default function BulkSend() {
         if (!headers.includes("phone")) { setCsvErr('CSV must have a "phone" column'); return; }
         if (!rows.length) { setCsvErr("No data rows found"); return; }
         const validRows = rows.filter(r => r.phone?.trim());
+        if (!validRows.length) { setCsvErr("No rows with a phone number found"); return; }
+
+        // ── Template variable checks — WhatsApp rejects any message with a missing/empty variable ──
+        const need = tpl?.params?.length || 0;
+        if (need > 0) {
+          const extraCols = headers.filter(h => h!=="phone" && h!=="name");
+          const hasCol = i => headers.includes(`param${i+1}`) || !!extraCols[i];
+          const missingCols = Array.from({length:need},(_,i)=>i).filter(i=>!hasCol(i));
+          if (missingCols.length) {
+            setCsvErr(`Template "${tpl.name}" needs ${need} value${need>1?"s":""} ({{1}}${need>1?`…{{${need}}}`:""}), but your CSV has no column for ${missingCols.map(i=>`{{${i+1}}}`).join(", ")}. Add column${missingCols.length>1?"s":""} ${missingCols.map(i=>`param${i+1}`).join(", ")} — or download the sample CSV for this template.`);
+            return;
+          }
+          const blanks = [];
+          validRows.forEach((r, idx) => {
+            const vals = getParams(r);
+            const empty = vals.map((v,i)=>String(v||"").trim() ? null : `{{${i+1}}}`).filter(Boolean);
+            if (empty.length) blanks.push(`row ${idx+2} (${r.phone.trim()}): ${empty.join(", ")}`);
+          });
+          if (blanks.length) {
+            setCsvErr(`${blanks.length} row${blanks.length>1?"s have":" has"} empty template values — WhatsApp will reject ${blanks.length>1?"them":"it"}. Fill these in or remove the rows: ${blanks.slice(0,5).join("; ")}${blanks.length>5?` …and ${blanks.length-5} more`:""}`);
+            return;
+          }
+        }
         // Deduplicate — keep first occurrence of each phone
         const seen = new Set();
         const unique = [];
@@ -133,7 +159,8 @@ export default function BulkSend() {
           else { seen.add(phone); unique.push(r); }
         }
         if (dupeCount > 0) {
-          setCsvErr(`Found ${dupeCount} duplicate phone number(s) — removed automatically. ${unique.length} unique contacts will be sent.`);
+          // Shown as a toast because the page moves on to the preview step
+          showToast(`Removed ${dupeCount} duplicate phone number(s) — ${unique.length} unique contacts`, "warn");
         }
         setCsvRows(unique);
         setStep(2);

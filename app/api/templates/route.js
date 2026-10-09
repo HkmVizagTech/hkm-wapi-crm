@@ -11,8 +11,11 @@ export async function GET(req) {
       const templates = await getGupshupTemplates();
       // Normalize Gupshup format to match Flaxxa shape used by frontend
       const normalized = templates.map(t => {
-        // data field has body + footer/buttons joined by newlines; take first paragraph block as body
-        const bodyText = (t.data||"").split("\n\n").slice(0, -1).join("\n\n") || t.data || "";
+        // Prefer the body-only text from containerMeta. Don't trim paragraphs off `data` —
+        // that dropped variables placed in the last paragraph (e.g. a trailing {{2}}).
+        let meta = {};
+        try { meta = typeof t.containerMeta === "string" ? JSON.parse(t.containerMeta) : (t.containerMeta||{}); } catch {}
+        const bodyText = meta.data || t.data || "";
         return {
           id: t.id, name: t.elementName, status: t.status,
           category: t.category, language: t.languageCode,
