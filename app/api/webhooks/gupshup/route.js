@@ -9,6 +9,7 @@ import { processWithGemini } from "@/lib/gemini";
 import { executeAction }     from "@/lib/ai-actions";
 import { sendGupshupText }   from "@/lib/gupshup";
 import { BUILD_VERSION }     from "@/lib/version";
+import { isAiReplyOn }       from "@/lib/ai-switch";
 
 export async function GET() {
   return NextResponse.json({ status:"Gupshup webhook active" });
@@ -99,8 +100,8 @@ export async function POST(req) {
 
       // AI auto-reply / draft
       const aiMode = contact?.aiMode || "auto";
-      const aiActive = msgType==="text" && !contact?.doNotContact &&
-                       process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
+      // isAiReplyOn() = AI_ENABLED + GEMINI_API_KEY in env AND not paused from the dashboard
+      const aiActive = msgType==="text" && !contact?.doNotContact && await isAiReplyOn();
       await Message.updateOne(
         { wamid },
         { $set:{ meta:{

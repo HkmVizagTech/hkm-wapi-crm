@@ -9,6 +9,7 @@ import WebhookForward   from "@/models/WebhookForward";
 import { processWithGemini } from "@/lib/gemini";
 import { executeAction }     from "@/lib/ai-actions";
 import { sendText }          from "@/lib/flaxxa";
+import { isAiReplyOn }       from "@/lib/ai-switch";
 
 async function forwardWebhook(payload, eventType) {
   try {
@@ -164,8 +165,8 @@ export async function POST(req) {
           // AI processing — only for inbound text/button messages
           // Skip if contact is in human mode or do-not-contact
           const aiMode = contact?.aiMode || "auto";
-          const aiActive = type === "text" && !contact?.doNotContact &&
-                           process.env.GEMINI_API_KEY && process.env.AI_ENABLED === "true";
+          // isAiReplyOn() = AI_ENABLED + GEMINI_API_KEY in env AND not paused from the dashboard
+          const aiActive = type === "text" && !contact?.doNotContact && await isAiReplyOn();
           if (aiActive && (aiMode === "auto" || aiMode === "draft")) {
             // Idempotency guard: claim the AI slot atomically so webhook
             // re-deliveries (retries from the provider while we're doing the slow

@@ -73,6 +73,8 @@ export default function BulkSend() {
   const [campId,   setCampId]   = useState(null);
   const [campData, setCampData] = useState(null);
   const [toast,    setToast]    = useState(null);
+  const [aiState,  setAiState]  = useState(null);   // from /api/settings/ai
+  const [pauseAi,  setPauseAi]  = useState(null);   // null = use default (on for 100+ recipients)
   const fileRef = useRef();
 
   const [allTemplates, setAllTemplates] = useState([]);
@@ -106,6 +108,12 @@ export default function BulkSend() {
   const tpl        = approvedAll.find(t => t.id === tplId);
   const hasHeader  = tpl?.header && ["IMAGE","DOCUMENT","VIDEO"].includes(String(tpl.header));
   const headerFmt  = hasHeader ? String(tpl.header) : null;
+
+  useEffect(() => {
+    fetch("/api/settings/ai").then(r=>r.json()).then(d=>{ if(!d.error) setAiState(d); }).catch(()=>{});
+  }, [step]);
+  const aiWillReply  = !!aiState?.active;
+  const pauseAiOn    = aiWillReply && (pauseAi ?? csvRows.length >= 100);
 
   const showToast = (m,t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
@@ -231,6 +239,19 @@ export default function BulkSend() {
           setSending(false); setStep(2); return;
         }
         campaignIds.push(d.campaignId);
+      }
+
+      // Pause AI auto-replies so replies to this campaign don't flood the server.
+      // Covers 24h after the send time (scheduled campaigns: 24h after the scheduled time).
+      if (pauseAiOn) {
+        const startMs = scheduledAt ? new Date(scheduledAt).getTime() : Date.now();
+        const hours   = Math.ceil((startMs - Date.now())/3600000) + 24;
+        try {
+          const pr = await fetch("/api/settings/ai",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({paused:true,hours,reason:`Bulk campaign: ${campBaseName}`})});
+          const pd = await pr.json();
+          if (pr.ok) setAiState(pd); else throw new Error(pd.error||"failed");
+        } catch(pe) { showToast("Campaign saved, but pausing AI failed: "+pe.message+" — pause it in Settings","error"); }
       }
 
       // All saved — show status based on type
@@ -650,6 +671,33 @@ export default function BulkSend() {
               </div>
             )}
           </div>
+
+          {/* AI auto-reply load protection */}
+          {aiState && (
+            <div style={{background:C.card,border:`1px solid ${aiWillReply?C.amber+"55":C.border}`,borderRadius:12,
+              padding:"12px 16px",marginBottom:14}}>
+              {aiWillReply ? (
+                <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+                  <input type="checkbox" checked={pauseAiOn} onChange={e=>setPauseAi(e.target.checked)}
+                    style={{marginTop:3,accentColor:C.g1,width:16,height:16}}/>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:13}}>⏸ Pause AI auto-replies for 24 hours after sending</div>
+                    <div style={{fontSize:12,color:C.txs,marginTop:2,lineHeight:1.5}}>
+                      AI replies are currently <strong style={{color:C.g1}}>ON</strong>. Every reply to this campaign would trigger an AI call —
+                      with {csvRows.length.toLocaleString()} recipients that can overload the server. Replies still land in the Inbox for staff.
+                      Resume any time in Settings.
+                    </div>
+                  </div>
+                </label>
+              ) : (
+                <div style={{fontSize:12,color:C.txs}}>
+                  🤖 AI auto-replies are <strong style={{color:C.amber}}>{aiState.envEnabled?"PAUSED":"OFF"}</strong>
+                  {aiState.paused&&aiState.pausedUntil?` until ${new Date(aiState.pausedUntil).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}`:""}
+                  {" "}— replies to this campaign will go to the Inbox only.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Warning */}
           <div style={{padding:"10px 14px",borderRadius:10,marginBottom:16,fontSize:13,

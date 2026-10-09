@@ -14,6 +14,65 @@ const IS = {
   outline:"none",boxSizing:"border-box",fontFamily:"inherit",
 };
 
+// ── AI auto-reply pause switch (stored in MongoDB, takes effect within ~10s, no redeploy) ──
+function AiSwitch({ envEnabled }) {
+  const [st, setSt]     = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState("");
+  const load = () => fetch("/api/settings/ai").then(r=>r.json()).then(d=>{ if(d.error) setErr(d.error); else setSt(d); }).catch(e=>setErr(e.message));
+  useEffect(()=>{ load(); }, []);
+  const set = async body => {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/settings/ai",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d = await r.json(); if (!r.ok) throw new Error(d.error||"Failed"); setSt(d);
+    } catch(e){ setErr(e.message); } finally { setBusy(false); }
+  };
+  const fmt = d => new Date(d).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"});
+  const btn = (label, onClick, primary) => (
+    <button key={label} disabled={busy} onClick={onClick} style={{padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,
+      cursor:busy?"wait":"pointer",border:primary?"none":`1px solid ${C.border}`,
+      background:primary?C.g1:"transparent",color:primary?"#000":C.tx,opacity:busy?.6:1}}>{label}</button>
+  );
+
+  if (!envEnabled) return (
+    <div style={{padding:"11px 14px",borderRadius:9,marginBottom:12,background:`${C.amber}0e`,border:`1px solid ${C.amber}33`}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.amber}}>🟡 AI Auto-Reply is OFF (not enabled on the server)</div>
+      <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
+        To make AI available: set AI_ENABLED=true and GEMINI_API_KEY in Railway env vars. You can then pause/resume it here any time.
+      </div>
+    </div>
+  );
+
+  const paused = st?.paused;
+  return (
+    <div style={{padding:"12px 14px",borderRadius:9,marginBottom:12,
+      background:paused?`${C.amber}0e`:`${C.g1}0e`,border:`1px solid ${paused?C.amber:C.g1}33`}}>
+      <div style={{fontSize:13,fontWeight:700,color:paused?C.amber:C.g1}}>
+        {!st ? "Loading AI status…" : paused ? "⏸ AI Auto-Reply is PAUSED" : "🟢 AI Auto-Reply is ACTIVE"}
+      </div>
+      <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
+        {paused
+          ? <>Incoming messages are saved to the Inbox but get no AI reply{st.pausedUntil?<> — resumes automatically on <strong style={{color:C.tx}}>{fmt(st.pausedUntil)}</strong></>:<> until you resume it</>}.{st.reason?` (${st.reason})`:""}</>
+          : "Incoming messages get automatic AI replies where the contact's mode is Auto. Pause before big campaigns so replies don't overload the server."}
+      </div>
+      {st && (
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+          {paused
+            ? btn("▶ Resume AI replies now", ()=>set({paused:false}), true)
+            : [
+                btn("Pause 6 hours",  ()=>set({paused:true,hours:6,  reason:"Paused from Settings"})),
+                btn("Pause 24 hours", ()=>set({paused:true,hours:24, reason:"Paused from Settings"})),
+                btn("Pause 3 days",   ()=>set({paused:true,hours:72, reason:"Paused from Settings"})),
+                btn("Pause until I resume", ()=>set({paused:true,hours:null,reason:"Paused from Settings"})),
+              ]}
+        </div>
+      )}
+      {err && <div style={{fontSize:11,color:C.red,marginTop:8}}>✕ {err}</div>}
+    </div>
+  );
+}
+
 export default function Settings() {
   const [forwards, setForwards] = useState([]);
   const [users,    setUsers]    = useState([]);
@@ -303,22 +362,8 @@ export default function Settings() {
           )}
         </div>
 
-        {/* Master switch status */}
-        <div style={{padding:"11px 14px",borderRadius:9,marginBottom:12,
-          background:cfg?.aiEnabled?`${C.g1}0e`:`${C.amber}0e`,
-          border:`1px solid ${cfg?.aiEnabled?C.g1:C.amber}33`}}>
-          <div style={{fontSize:13,fontWeight:700,
-            color:cfg?.aiEnabled?C.g1:C.amber}}>
-            {cfg?.aiEnabled
-              ? "🟢 AI Auto-Reply is ACTIVE"
-              : "🟡 AI Auto-Reply is OFF (integrated but not active)"}
-          </div>
-          <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
-            {cfg?.aiEnabled
-              ? "Incoming messages get automatic AI replies where mode is set to Auto."
-              : "To turn ON: set AI_ENABLED=true in Railway env vars. Until then, no auto-replies are sent."}
-          </div>
-        </div>
+        {/* Master switch — pause/resume without redeploying */}
+        {cfg && <AiSwitch envEnabled={!!(cfg.aiEnabled && cfg.gemini)}/>}
 
         {/* Features */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
