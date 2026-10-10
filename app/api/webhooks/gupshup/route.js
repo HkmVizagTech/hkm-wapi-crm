@@ -44,11 +44,13 @@ function makeQueue(name, concurrency, maxSize) {
   };
 }
 const g = globalThis;
-g.__gsStatusQ  ||= makeQueue("status-update", 4, 30000);
 g.__gsInboundQ ||= makeQueue("inbound-message", 4, 5000);
 g.__gsSeen     ||= new Set();
-const statusQ = g.__gsStatusQ, inboundQ = g.__gsInboundQ, seen = g.__gsSeen;
-const queueStats = () => ({ status:statusQ.stats(), inbound:inboundQ.stats() });
+g.__gsStatus   ||= { pending:[], busy:false, dropped:0, applied:0,
+                     tally:{ delivered:0, read:0, failed:0, codes:{} } };
+const inboundQ = g.__gsInboundQ, seen = g.__gsSeen, ST = g.__gsStatus;
+const queueStats = () => ({ status:{ waiting:ST.pending.length, applied:ST.applied, dropped:ST.dropped },
+                            inbound:inboundQ.stats() });
 
 export async function POST(req) {
   let body;
@@ -63,11 +65,10 @@ export async function POST(req) {
     if (status && ids.length) {
       // Gupshup re-delivers the same event when we were slow — handle each one once
       const key = `${ids[0]}:${status}`;
-      if (!seen.has(key)) {
-        if (seen.size > 100000) seen.clear();
+      if (status !== "sent" && !seen.has(key)) {   // "sent" changes nothing we track
+        if (seen.size > 200000) seen.clear();
         seen.add(key);
-        statusQ.push(() => handleStatusEvent(payload, ids, status, 0)
-          .catch(e => { seen.delete(key); throw e; }));   // failed → let Gupshup's retry through
+        if (!queueStatus(payload, ids, status)) seen.delete(key);
       }
     }
     return NextResponse.json({ ok:true });
@@ -223,46 +224,116 @@ async function handleInbound(payload) {
   }
 }
 
-/* ── Message status event ── */
-// Gupshup sends its own message ID in `id` for enqueued/failed events, but the
-// WhatsApp ID in `id` (and its own ID in `gsId`) for sent/delivered/read.
-// We store Gupshup's ID at send time, so match on both.
-const RETRY_DELAYS = [20000, 60000, 180000];
-async function handleStatusEvent(payload, ids, status, attempt) {
+/* ── Message status events — applied in BATCHES ──────────────────────────────
+   A bulk send produces 3–4 status events per message (100+ per second). Updating the
+   campaign once per event rewrote a ~1 MB campaign document every time, which the
+   free MongoDB tier could not keep up with. Now events are collected and applied
+   every 2 seconds: one update per status type per batch, whatever the batch size.
+   Events are held 30 s first, so the sender has saved the message ID they refer to.
+   ─────────────────────────────────────────────────────────────────────────── */
+const HOLD_MS = 30000, TICK_MS = 2000, BATCH = 3000, MAX_PENDING = 200000;
+const QUIET_CODES = ["131026","131049","131050","130472"];   // recipient-side, normal in bulk
+
+function queueStatus(payload, ids, status) {
+  const code   = String(payload.payload?.code || "");
   const reason = status==="failed"
     ? [payload.payload?.code, payload.payload?.reason].filter(Boolean).join(" — ") || "Failed (no reason given)"
     : "";
-  // Recipient-side failures (not on WhatsApp, opted out, per-user limits) are normal in bulk
-  // sends — log them quietly; anything else is a real problem and stays red.
-  if (status==="failed" && attempt===0) {
-    const code = String(payload.payload?.code || "");
-    if (["131026","131049","131050","130472"].includes(code)) console.log(`⚠️ Undelivered (${code}) ${ids[0]}`);
+  ST.tally[status] = (ST.tally[status] || 0) + 1;
+  if (status==="failed") {
+    if (QUIET_CODES.includes(code)) ST.tally.codes[code] = (ST.tally.codes[code] || 0) + 1;
     else console.error(`❌ Gupshup delivery failed ${ids.join("/")}: ${reason}`);
   }
+  if (ST.pending.length >= MAX_PENDING) {
+    if (ST.dropped++ % 1000 === 0) console.warn(`⚠️ status backlog full (${MAX_PENDING}) — dropped ${ST.dropped}`);
+    return false;
+  }
+  ST.pending.push({ at:Date.now(), ids, status, reason });
+  return true;
+}
 
+// Timers live on globalThis so a module reload never starts a second copy
+if (!g.__gsStatusTimer) {
+  g.__gsStatusTimer = setInterval(() => {
+    flushStatuses().catch(e => console.error("status batch error (will retry):", e.message));
+  }, TICK_MS);
+  // One summary line a minute instead of one log line per undelivered message
+  g.__gsStatusLog = setInterval(() => {
+    const t = ST.tally;
+    if (!t.delivered && !t.read && !t.failed && !ST.pending.length) return;
+    const codes = Object.entries(t.codes).map(([c,n]) => `${c}×${n}`).join(", ");
+    console.log(`📊 Status events (last 60s): delivered ${t.delivered} · read ${t.read} · failed ${t.failed}`
+      + (codes ? ` [${codes}]` : "") + ` · backlog ${ST.pending.length}`);
+    ST.tally = { delivered:0, read:0, failed:0, codes:{} };
+  }, 60000);
+}
+
+async function flushStatuses() {
+  if (ST.busy || !ST.pending.length) return;
+  const cutoff = Date.now() - HOLD_MS;
+  let n = 0;
+  while (n < ST.pending.length && n < BATCH && ST.pending[n].at <= cutoff) n++;
+  if (!n) return;
+  const batch = ST.pending.splice(0, n);
+  ST.busy = true;
+  try {
+    await applyStatuses(batch);
+    ST.applied += batch.length;
+  } catch (e) {
+    ST.pending.unshift(...batch);      // keep them; next tick retries
+    throw e;
+  } finally {
+    ST.busy = false;
+  }
+}
+
+async function applyStatuses(batch) {
+  const delivered = new Set(), read = new Set(), failed = new Map(), all = new Set();
+  for (const ev of batch) {
+    for (const id of ev.ids) all.add(id);
+    if (ev.status === "delivered") ev.ids.forEach(i => delivered.add(i));
+    else if (ev.status === "read") ev.ids.forEach(i => read.add(i));
+    else if (ev.status === "failed") {
+      if (!failed.has(ev.reason)) failed.set(ev.reason, new Set());
+      ev.ids.forEach(i => failed.get(ev.reason).add(i));
+    }
+  }
+  if (!all.size) return;
   await connectDB();
-  const m = await Message.updateOne({ wamid:{ $in:ids } }, { $set:{ status } });
-  if (status === "sent") return;
 
-  // Update campaign metrics with single atomic, indexed updates (results.wamid index).
-  // Never loads the campaign document — matters when 25k status events arrive at once.
-  const at = st => ({ results:{ $elemMatch:{ wamid:{ $in:ids }, status:st } } });
-  const upd = (st, $set, $inc) => Campaign.updateOne(at(st), { $set, $inc });
-  let r = { modifiedCount:0 };
-  if (status==="delivered") {
-    r = await upd("sent", { "results.$.status":"delivered" }, { delivered:1 });
-  } else if (status==="read") {
-    r = await upd("sent", { "results.$.status":"read" }, { read:1, delivered:1 });
-    if (!r.modifiedCount) r = await upd("delivered", { "results.$.status":"read" }, { read:1 });
-  } else if (status==="failed") {
-    r = await upd("sent", { "results.$.status":"failed", "results.$.error":reason }, { failed:1, sent:-1 });
-    if (!r.modifiedCount) r = await upd("pending", { "results.$.status":"failed", "results.$.error":reason }, { failed:1 });
-  }
+  // Campaign results: one arrayFilters update per transition (order matters:
+  // delivered → read → failed), then recount the totals from the results array.
+  const move = (ids, from, to, reason) => ({ updateMany:{
+    filter: { "results.wamid":{ $in:ids } },
+    update: { $set: reason
+      ? { "results.$[r].status":to, "results.$[r].error":reason }
+      : { "results.$[r].status":to } },
+    arrayFilters: [{ "r.wamid":{ $in:ids }, "r.status":{ $in:from } }],
+  }});
+  const ops = [];
+  if (delivered.size) ops.push(move([...delivered], ["sent"], "delivered"));
+  if (read.size)      ops.push(move([...read], ["sent","delivered"], "read"));
+  for (const [reason, set] of failed) ops.push(move([...set], ["sent","pending"], "failed", reason));
+  const cnt = sts => ({ $size:{ $filter:{ input:"$results", as:"x", cond:{ $in:["$$x.status", sts] } } } });
+  ops.push({ updateMany:{
+    filter: { "results.wamid":{ $in:[...all] } },
+    update: [{ $set:{
+      sent:      cnt(["sent","delivered","read"]),
+      delivered: cnt(["delivered","read"]),
+      read:      cnt(["read"]),
+      failed:    cnt(["failed"]),
+    }}],
+  }});
+  await Campaign.collection.bulkWrite(ops, { ordered:true });
 
-  // The sender saves results in batches, so an event can arrive before its message ID
-  // is in the DB. Nothing matched → try again a little later (up to 3 times).
-  if (!m.matchedCount && !r.modifiedCount && attempt < RETRY_DELAYS.length) {
-    setTimeout(() => statusQ.push(() => handleStatusEvent(payload, ids, status, attempt + 1)),
-               RETRY_DELAYS[attempt]);
-  }
+  // One-to-one messages (inbox / AI replies)
+  const mops = [];
+  if (delivered.size) mops.push({ updateMany:{ filter:{ wamid:{ $in:[...delivered] }, status:"sent" },
+                                               update:{ $set:{ status:"delivered" } } } });
+  if (read.size)      mops.push({ updateMany:{ filter:{ wamid:{ $in:[...read] }, status:{ $in:["sent","delivered"] } },
+                                               update:{ $set:{ status:"read" } } } });
+  const fids = [...failed.values()].flatMap(s => [...s]);
+  if (fids.length)    mops.push({ updateMany:{ filter:{ wamid:{ $in:fids }, status:{ $in:["sent","delivered"] } },
+                                               update:{ $set:{ status:"failed" } } } });
+  if (mops.length) await Message.collection.bulkWrite(mops, { ordered:true });
 }
