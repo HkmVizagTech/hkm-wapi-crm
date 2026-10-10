@@ -179,9 +179,15 @@ export async function POST(req) {
         const reason = status==="failed"
           ? [payload.payload?.code, payload.payload?.reason].filter(Boolean).join(" — ") || "Failed (no reason given)"
           : "";
-        if (status==="failed") console.error(`❌ Gupshup delivery failed ${ids.join("/")}: ${reason}`);
+        // Recipient-side failures (not on WhatsApp, opted out, per-user limits) are normal in bulk
+        // sends — log them quietly; anything else is a real problem and stays red.
+        if (status==="failed") {
+          const code = String(payload.payload?.code || "");
+          if (["131026","131049","131050","130472"].includes(code)) console.log(`⚠️ Undelivered (${code}) ${ids[0]}`);
+          else console.error(`❌ Gupshup delivery failed ${ids.join("/")}: ${reason}`);
+        }
 
-        await Message.findOneAndUpdate({ wamid:{ $in:ids } }, { $set:{ status } });
+        await Message.updateOne({ wamid:{ $in:ids } }, { $set:{ status } });
 
         // Update campaign metrics with single atomic, indexed updates (results.wamid index).
         // Never loads the campaign document — matters when 25k status events arrive at once.
