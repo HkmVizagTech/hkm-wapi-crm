@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { FilePlus2, ArrowLeft, Check, X, Plus, Type, Image as ImageIcon, FileText, Video, Lightbulb, CornerDownLeft, CornerUpLeft, Link as LinkIcon, Phone, Send, Smartphone, TriangleAlert, CircleCheck, CircleX } from "lucide-react";
+import { PageHeader, Btn } from "@/components/ui";
+import { useToast } from "@/components/Feedback";
 
 const C = {
   g1:"#25d366", g2:"#1aad52", teal:"#00c9d4", blue:"#2979ff",
@@ -46,9 +49,9 @@ export default function CreateTemplate() {
   const [buttons,   setButtons]  = useState([]);
   const [saving,    setSaving]   = useState(false);
   const [result,    setResult]   = useState(null);
-  const [toast,     setToast]    = useState(null);
+  const toast = useToast();
 
-  const showToast = (m,t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+  const showToast = (m,t="success") => toast(m,t);
 
   // Extract {{n}} params from body
   const params = [...new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map(m=>m[1]))].sort();
@@ -81,7 +84,7 @@ export default function CreateTemplate() {
     const data = await res.json();
     if (res.ok && data.ok) {
       setResult({ ok:true, id:data.templateId, status:data.status });
-      showToast("Template submitted for Meta approval! ✓");
+      showToast("Template submitted for Meta approval!");
     } else {
       setResult({ ok:false, error:data.error, hint:data.hint });
       showToast(data.error||"Submission failed","error");
@@ -90,17 +93,16 @@ export default function CreateTemplate() {
   };
 
   return (
-    <div style={{padding:24, display:"grid", gridTemplateColumns:"1fr 360px", gap:20, maxWidth:1100, margin:"0 auto"}}>
+    <div className="page-wrap">
+      <style>{`.tc-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}@media(min-width:960px){.tc-grid{grid-template-columns:minmax(0,1fr) 360px}}`}</style>
+      <PageHeader icon={FilePlus2} title="Create Template" subtitle="Design a WhatsApp message template and submit it to Meta for approval"
+        actions={<Link href="/dashboard/templates" className="ui-btn" style={{textDecoration:"none"}}><ArrowLeft size={15}/> Templates</Link>}/>
+      <div className="tc-grid">
 
       {/* ── Left: Form ── */}
       <div>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:22}}>
-          <Link href="/dashboard/templates" style={{color:C.txs,fontSize:14,textDecoration:"none"}}>← Templates</Link>
-          <h1 style={{fontSize:20,fontWeight:800}}>Create Template</h1>
-        </div>
-
         {/* Basic info */}
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:14}}>
+        <div className="ui-card ui-card-pad" style={{marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Basic Info</div>
           <div style={{marginBottom:12}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
@@ -135,27 +137,27 @@ export default function CreateTemplate() {
         </div>
 
         {/* Header */}
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:14}}>
+        <div className="ui-card ui-card-pad" style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
             <div style={{fontWeight:700,fontSize:14}}>Header <span style={{color:C.txd,fontSize:12,fontWeight:400}}>(optional)</span></div>
             <button onClick={()=>setHeader(h=>!h)} style={{
-              padding:"5px 12px",borderRadius:20,border:`1px solid ${C.border}`,
+              display:"inline-flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,border:`1px solid ${C.border}`,
               background:header?`${C.g1}18`:"transparent",
               color:header?C.g1:C.txs,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-              {header?"✓ Enabled":"+ Add Header"}
+              {header?<><Check size={13}/> Enabled</>:<><Plus size={13}/> Add Header</>}
             </button>
           </div>
           {header&&<>
             <div style={{marginBottom:12}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
                 textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Format</label>
-              <div style={{display:"flex",gap:6}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {["TEXT","IMAGE","DOCUMENT","VIDEO"].map(f=>(
                   <button key={f} onClick={()=>setHFormat(f)} style={{
-                    padding:"6px 14px",borderRadius:8,border:`1px solid ${hFormat===f?C.g1:C.border}`,
+                    display:"inline-flex",alignItems:"center",gap:6,padding:"6px 14px",borderRadius:8,border:`1px solid ${hFormat===f?C.g1:C.border}`,
                     background:hFormat===f?`${C.g1}18`:"transparent",
                     color:hFormat===f?C.g1:C.txs,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    {f==="TEXT"?"T":f==="IMAGE"?"🖼":f==="DOCUMENT"?"📄":"🎥"} {f}
+                    {f==="TEXT"?<Type size={13}/>:f==="IMAGE"?<ImageIcon size={13}/>:f==="DOCUMENT"?<FileText size={13}/>:<Video size={13}/>} {f}
                   </button>
                 ))}
               </div>
@@ -171,16 +173,17 @@ export default function CreateTemplate() {
             )}
             {hFormat!=="TEXT"&&(
               <div style={{padding:12,borderRadius:8,background:`${C.blue}08`,
-                border:`1px solid ${C.blue}20`,fontSize:12,color:C.txs}}>
-                💡 {hFormat} headers require a media URL when sending. The template will be approved
-                without a specific file — you provide the URL at send time.
+                border:`1px solid ${C.blue}20`,fontSize:12,color:C.txs,display:"flex",gap:8,alignItems:"flex-start"}}>
+                <Lightbulb size={15} color={C.blue} style={{flexShrink:0,marginTop:1}}/>
+                <span>{hFormat} headers require a media URL when sending. The template will be approved
+                without a specific file — you provide the URL at send time.</span>
               </div>
             )}
           </>}
         </div>
 
         {/* Body */}
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:14}}>
+        <div className="ui-card ui-card-pad" style={{marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Body *</div>
           <textarea style={{...IS,minHeight:120,resize:"vertical",lineHeight:1.7}}
             placeholder={"Dear *{{1}}*,\n\nThank you for your donation of *₹{{2}}/-* towards *{{3}}*.\n\nMay Lord Krishna bless you 🙏"}
@@ -212,14 +215,14 @@ export default function CreateTemplate() {
               <button key={i} onClick={()=>setBody(b=>b+s)} style={{
                 padding:"4px 10px",borderRadius:6,border:`1px solid ${C.border}`,
                 background:C.surf,color:C.txs,fontSize:12,cursor:"pointer",fontFamily:"monospace"}}>
-                {s==="\n"?"↵ newline":s}
+                {s==="\n"?<span style={{display:"inline-flex",alignItems:"center",gap:4}}><CornerDownLeft size={12}/> newline</span>:s}
               </button>
             ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:14}}>
+        <div className="ui-card ui-card-pad" style={{marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>
             Footer <span style={{color:C.txd,fontSize:12,fontWeight:400}}>(optional)</span>
           </div>
@@ -229,16 +232,16 @@ export default function CreateTemplate() {
         </div>
 
         {/* Buttons */}
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:20}}>
+        <div className="ui-card ui-card-pad" style={{marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
             <div style={{fontWeight:700,fontSize:14}}>
               Buttons <span style={{color:C.txd,fontSize:12,fontWeight:400}}>(optional, max 3)</span>
             </div>
             {buttons.length<3&&(
-              <button onClick={addBtn} style={{padding:"5px 12px",borderRadius:20,
+              <button onClick={addBtn} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,
                 border:`1px solid ${C.border}`,background:`${C.g1}18`,
                 color:C.g1,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                + Add Button
+                <Plus size={13}/> Add Button
               </button>
             )}
           </div>
@@ -251,18 +254,18 @@ export default function CreateTemplate() {
             <div key={i} style={{background:C.surf,borderRadius:10,padding:14,
               border:`1px solid ${C.border}`,marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                <div style={{display:"flex",gap:4}}>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                   {BTN_TYPES.map(t=>(
                     <button key={t} onClick={()=>updateBtn(i,"type",t)} style={{
-                      padding:"4px 10px",borderRadius:6,border:`1px solid ${btn.type===t?C.g1:C.border}`,
+                      display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:6,border:`1px solid ${btn.type===t?C.g1:C.border}`,
                       background:btn.type===t?`${C.g1}18`:"transparent",
                       color:btn.type===t?C.g1:C.txs,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                      {t==="QUICK_REPLY"?"↩ Reply":t==="URL"?"🔗 URL":"📞 Phone"}
+                      {t==="QUICK_REPLY"?<CornerUpLeft size={12}/>:t==="URL"?<LinkIcon size={12}/>:<Phone size={12}/>}{t==="QUICK_REPLY"?"Reply":t==="URL"?"URL":"Phone"}
                     </button>
                   ))}
                 </div>
                 <button onClick={()=>removeBtn(i)} style={{background:"none",
-                  border:"none",color:C.red,fontSize:18,cursor:"pointer",padding:0}}>×</button>
+                  border:"none",color:C.red,cursor:"pointer",padding:4,display:"flex"}}><X size={16}/></button>
               </div>
               <input style={{...IS,marginBottom:btn.type!=="QUICK_REPLY"?8:0}}
                 placeholder="Button text (e.g. Donate Now)"
@@ -287,8 +290,8 @@ export default function CreateTemplate() {
             color:result.ok?C.g1:C.red}}>
             {result.ok?(
               <div>
-                <div style={{fontWeight:800,fontSize:15,marginBottom:6}}>
-                  ✓ Submitted for Meta approval!
+                <div style={{fontWeight:800,fontSize:15,marginBottom:6,display:"flex",alignItems:"center",gap:7}}>
+                  <CircleCheck size={18}/> Submitted for Meta approval!
                 </div>
                 <div style={{fontSize:13}}>Template ID: <strong>{result.id}</strong></div>
                 <div style={{fontSize:13}}>Status: <strong>{result.status||"PENDING"}</strong></div>
@@ -299,21 +302,17 @@ export default function CreateTemplate() {
               </div>
             ):(
               <div>
-                <div style={{fontWeight:700,marginBottom:4}}>✕ {result.error}</div>
+                <div style={{fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:7}}><CircleX size={17}/> {result.error}</div>
                 {result.hint&&<div style={{fontSize:12,opacity:.8}}>{result.hint}</div>}
               </div>
             )}
           </div>
         )}
 
-        <button onClick={submit} disabled={saving||!name||!body} style={{
-          width:"100%",padding:"13px",borderRadius:10,border:"none",
-          background:`linear-gradient(135deg,${C.g1},${C.g2})`,
-          color:"#000",fontSize:15,fontWeight:800,cursor:"pointer",
-          opacity:saving||!name||!body?.5:1,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          {saving?"⏳ Submitting to Meta…":"🚀 Submit Template for Approval"}
-        </button>
+        <Btn variant="primary" onClick={submit} disabled={saving||!name||!body} loading={saving}
+          style={{width:"100%",padding:"13px",fontSize:15,fontWeight:800,opacity:saving||!name||!body?.5:1}}>
+          {saving?"Submitting to Meta…":<><Send size={16}/> Submit Template for Approval</>}
+        </Btn>
         <p style={{fontSize:11,color:C.txd,textAlign:"center",marginTop:8}}>
           Requires WABA_ID + META_TOKEN in Railway environment variables
         </p>
@@ -321,8 +320,8 @@ export default function CreateTemplate() {
 
       {/* ── Right: WhatsApp Preview ── */}
       <div style={{position:"sticky",top:20,height:"fit-content"}}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:C.txs}}>
-          📱 WhatsApp Preview
+        <div style={{fontWeight:700,fontSize:14,marginBottom:12,color:C.txs,display:"flex",alignItems:"center",gap:8}}>
+          <Smartphone size={16} color={C.g1}/> WhatsApp Preview
         </div>
         {/* Phone frame */}
         <div style={{background:"#0a0a0a",borderRadius:36,padding:12,
@@ -400,8 +399,7 @@ export default function CreateTemplate() {
         </div>
 
         {/* Template info summary */}
-        <div style={{marginTop:16,background:C.card,border:`1px solid ${C.border}`,
-          borderRadius:12,padding:14}}>
+        <div className="ui-card" style={{marginTop:16,padding:14}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Template Summary</div>
           {[
             {l:"Name",    v:name||"—"},
@@ -422,21 +420,14 @@ export default function CreateTemplate() {
         {/* Requirements note */}
         <div style={{marginTop:12,padding:12,borderRadius:10,fontSize:12,lineHeight:1.7,
           background:`${C.amber}08`,border:`1px solid ${C.amber}25`,color:C.txs}}>
-          <strong style={{color:C.amber}}>⚠ Required env vars in Railway:</strong><br/>
+          <strong style={{color:C.amber,display:"inline-flex",alignItems:"center",gap:6}}><TriangleAlert size={14}/> Required env vars in Railway:</strong><br/>
           <code style={{fontSize:11,color:C.tx}}>WABA_ID</code> — WhatsApp Business Account ID<br/>
           <code style={{fontSize:11,color:C.tx}}>META_TOKEN</code> — Meta System User Token<br/>
           <span style={{fontSize:11,color:C.txd}}>Find both in Meta Business Manager → WhatsApp → API Setup</span>
         </div>
       </div>
+      </div>
 
-      {toast&&(
-        <div style={{position:"fixed",bottom:20,right:20,zIndex:999,
-          padding:"11px 18px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
-          background:toast.t==="success"?`${C.g1}ee`:`${C.red}ee`,
-          color:toast.t==="error"?"#fff":"#000"}} onClick={()=>setToast(null)}>
-          {toast.t==="success"?"✓":"✕"} {toast.m}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,5 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
+import { Settings as SettingsIcon, Radio, GitBranch, Bot, MessageCircle, Target, Siren, BarChart3, Globe,
+  ShieldCheck, Repeat, Play, Pause, Trash2, KeyRound, Users, UserPlus, Plus, AlertTriangle, Zap,
+  CheckCircle2, XCircle, PenLine, User } from "lucide-react";
+import { PageHeader, Card, Btn, Badge, EmptyState } from "@/components/ui";
+import DataTable from "@/components/DataTable";
+import { Modal, useToast, useConfirm } from "@/components/Feedback";
 
 const C = {
   g1:"#25d366",g2:"#1aad52",teal:"#00c9d4",blue:"#2979ff",
@@ -29,15 +35,13 @@ function AiSwitch({ envEnabled }) {
     } catch(e){ setErr(e.message); } finally { setBusy(false); }
   };
   const fmt = d => new Date(d).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"});
-  const btn = (label, onClick, primary) => (
-    <button key={label} disabled={busy} onClick={onClick} style={{padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,
-      cursor:busy?"wait":"pointer",border:primary?"none":`1px solid ${C.border}`,
-      background:primary?C.g1:"transparent",color:primary?"#000":C.tx,opacity:busy?.6:1}}>{label}</button>
+  const btn = (label, onClick, primary, icon) => (
+    <Btn key={label} size="sm" variant={primary?"primary":""} icon={icon} disabled={busy} onClick={onClick}>{label}</Btn>
   );
 
   if (!envEnabled) return (
     <div style={{padding:"11px 14px",borderRadius:9,marginBottom:12,background:`${C.amber}0e`,border:`1px solid ${C.amber}33`}}>
-      <div style={{fontSize:13,fontWeight:700,color:C.amber}}>🟡 AI Auto-Reply is OFF (not enabled on the server)</div>
+      <div style={{fontSize:13,fontWeight:700,color:C.amber,display:"flex",alignItems:"center",gap:7}}><AlertTriangle size={15}/>AI Auto-Reply is OFF (not enabled on the server)</div>
       <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
         To make AI available: set AI_ENABLED=true and GEMINI_API_KEY in Railway env vars. You can then pause/resume it here any time.
       </div>
@@ -48,8 +52,8 @@ function AiSwitch({ envEnabled }) {
   return (
     <div style={{padding:"12px 14px",borderRadius:9,marginBottom:12,
       background:paused?`${C.amber}0e`:`${C.g1}0e`,border:`1px solid ${paused?C.amber:C.g1}33`}}>
-      <div style={{fontSize:13,fontWeight:700,color:paused?C.amber:C.g1}}>
-        {!st ? "Loading AI status…" : paused ? "⏸ AI Auto-Reply is PAUSED" : "🟢 AI Auto-Reply is ACTIVE"}
+      <div style={{fontSize:13,fontWeight:700,color:paused?C.amber:C.g1,display:"flex",alignItems:"center",gap:7}}>
+        {!st ? "Loading AI status…" : paused ? <><Pause size={15}/>AI Auto-Reply is PAUSED</> : <><CheckCircle2 size={15}/>AI Auto-Reply is ACTIVE</>}
       </div>
       <div style={{fontSize:11,color:C.txs,marginTop:4,lineHeight:1.5}}>
         {paused
@@ -59,7 +63,7 @@ function AiSwitch({ envEnabled }) {
       {st && (
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
           {paused
-            ? btn("▶ Resume AI replies now", ()=>set({paused:false}), true)
+            ? btn("Resume AI replies now", ()=>set({paused:false}), true, Play)
             : [
                 btn("Pause 6 hours",  ()=>set({paused:true,hours:6,  reason:"Paused from Settings"})),
                 btn("Pause 24 hours", ()=>set({paused:true,hours:24, reason:"Paused from Settings"})),
@@ -68,7 +72,7 @@ function AiSwitch({ envEnabled }) {
               ]}
         </div>
       )}
-      {err && <div style={{fontSize:11,color:C.red,marginTop:8}}>✕ {err}</div>}
+      {err && <div style={{fontSize:11,color:C.red,marginTop:8,display:"flex",alignItems:"center",gap:5}}><XCircle size={12}/>{err}</div>}
     </div>
   );
 }
@@ -82,12 +86,12 @@ export default function Settings() {
   const [loading,  setLoading]  = useState(true);
   const [form,     setForm]     = useState({ name:"",url:"",secret:"",events:["all"] });
   const [saving,   setSaving]   = useState(false);
-  const [toast,    setToast]    = useState(null);
   const [testing,  setTesting]  = useState({});
-
-  const showToast = (m,t="success") => {
-    setToast({m,t}); setTimeout(()=>setToast(null),4000);
-  };
+  const [fwdOpen,  setFwdOpen]  = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const showToast = (m,t="success") => toast(m,t);
 
   const load = async () => {
     const r = await fetch("/api/webhook-forwards");
@@ -113,7 +117,8 @@ export default function Settings() {
     if (r.ok) {
       setForwards(prev=>[d.forward,...prev]);
       setForm({name:"",url:"",secret:"",events:["all"]});
-      showToast("Webhook forward added!");
+      setFwdOpen(false);
+      showToast("Webhook forward added");
     } else {
       showToast(d.error||"Failed","error");
     }
@@ -129,7 +134,7 @@ export default function Settings() {
   };
 
   const deleteForward = async (id) => {
-    if (!confirm("Delete this webhook forward?")) return;
+    if (!(await confirm({title:"Delete webhook forward?",message:"This forward will stop receiving events.",confirmLabel:"Delete",danger:true}))) return;
     await fetch(`/api/webhook-forwards/${id}`,{ method:"DELETE" });
     setForwards(prev=>prev.filter(f=>f._id!==id));
     showToast("Deleted");
@@ -142,8 +147,8 @@ export default function Settings() {
       body:JSON.stringify({id}),
     });
     const d = await r.json();
-    if (d.ok) showToast(`✅ Test sent! Response: ${d.status}`);
-    else showToast(`❌ Test failed: ${d.error||d.status}`,"error");
+    if (d.ok) showToast(`Test sent! Response: ${d.status}`);
+    else showToast(`Test failed: ${d.error||d.status}`,"error");
     setTesting(p=>({...p,[id]:false}));
     load();
   };
@@ -157,19 +162,12 @@ export default function Settings() {
   };
 
   return (
-    <div style={{padding:20,maxWidth:700,margin:"0 auto"}}>
-      <h1 style={{fontSize:20,fontWeight:800,marginBottom:4}}>⚙️ Settings</h1>
-      <p style={{fontSize:13,color:C.txs,marginBottom:24}}>
-        Configure webhook forwarding and integrations
-      </p>
+    <div className="page-wrap" style={{maxWidth:"min(1000px,100%)"}}>
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="Configure webhook forwarding and integrations"/>
 
       {/* Webhook Info */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,
-        borderRadius:12,padding:16,marginBottom:20}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>
-          📡 Your Webhook URL
-        </div>
-        <p style={{fontSize:12,color:C.txs,marginBottom:10,lineHeight:1.6}}>
+      <Card title="Your Webhook URL" icon={Radio} style={{marginBottom:20}}>
+        <p style={{fontSize:12,color:C.txs,marginBottom:12,lineHeight:1.6,marginTop:-6}}>
           Configure these URLs in Gupshup and Flaxxa dashboards to receive WhatsApp events.
         </p>
         {[{name:"Gupshup", url:cfg?.webhooks?.gupshup},{name:"Flaxxa", url:cfg?.webhooks?.flaxxa}].map(w=>(
@@ -185,161 +183,82 @@ export default function Settings() {
         <div style={{marginTop:10,fontSize:12,color:C.txs}}>
           Flaxxa verify token: <code style={{color:C.amber}}>hkm_vizag_webhook_2025</code>
         </div>
-      </div>
+      </Card>
 
       {/* Webhook Forwards */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,
-        borderRadius:12,padding:16,marginBottom:20}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>
-          🔀 Webhook Forwarding
-        </div>
-        <p style={{fontSize:12,color:C.txs,marginBottom:16,lineHeight:1.6}}>
+      <Card title="Webhook Forwarding" icon={GitBranch} style={{marginBottom:20}}>
+        <p style={{fontSize:12,color:C.txs,marginBottom:16,lineHeight:1.6,marginTop:-6}}>
           Forward incoming WhatsApp webhooks to external URLs in real-time.
           Useful for Zapier, Make, n8n, or your own servers.
         </p>
 
-        {/* Add form */}
-        <div style={{background:C.surf,borderRadius:10,padding:14,
-          border:`1px solid ${C.border}`,marginBottom:16}}>
-          <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:C.g1}}>
-            + Add Forward URL
-          </div>
-          <div style={{display:"grid",gap:10}}>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>
-                Name
-              </label>
-              <input style={IS} placeholder="e.g. My n8n Server"
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          <Btn variant="primary" icon={Plus} onClick={()=>setFwdOpen(true)}>Add Forward URL</Btn>
+        </div>
+        <Modal open={fwdOpen} onClose={()=>setFwdOpen(false)} title="Add Forward URL" icon={Plus} width={520}
+          footer={<>
+            <Btn variant="ghost" onClick={()=>setFwdOpen(false)}>Cancel</Btn>
+            <Btn variant="primary" icon={Plus} loading={saving} onClick={addForward} disabled={saving||!form.name||!form.url}>
+              {saving?"Saving…":"Add Webhook Forward"}
+            </Btn>
+          </>}>
+          <div>
+            <div className="field">
+<label>Name</label>
+              <input className="input" placeholder="e.g. My n8n Server"
                 value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
             </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>
-                URL
-              </label>
-              <input style={IS} placeholder="https://your-server.com/webhook"
+            <div className="field">
+<label>URL</label>
+              <input className="input" placeholder="https://your-server.com/webhook"
                 value={form.url} onChange={e=>setForm(f=>({...f,url:e.target.value}))}/>
             </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>
-                Secret (optional — sent as X-Webhook-Secret header)
-              </label>
-              <input style={IS} placeholder="your-secret-key"
+            <div className="field">
+<label>Secret (optional — sent as X-Webhook-Secret header)</label>
+              <input className="input" placeholder="your-secret-key"
                 value={form.secret} onChange={e=>setForm(f=>({...f,secret:e.target.value}))}/>
             </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
-                Events to forward
-              </label>
+            <div className="field">
+<label>Events to forward</label>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {["all","message","status"].map(ev=>(
                   <button key={ev} onClick={()=>toggleEvent(ev)} style={{
-                    padding:"5px 14px",borderRadius:20,border:"none",
+                    padding:"6px 14px",borderRadius:20,border:"none",
                     background:form.events.includes(ev)?C.g1:C.border,
                     color:form.events.includes(ev)?"#000":C.txs,
-                    fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    {ev==="all"?"🔁 All":ev==="message"?"💬 Messages":"📊 Status updates"}
+                    fontSize:12,fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>
+                    {ev==="all"?<><Repeat size={13}/>All</>:ev==="message"?<><MessageCircle size={13}/>Messages</>:<><BarChart3 size={13}/>Status updates</>}
                   </button>
                 ))}
               </div>
             </div>
           </div>
-          <button onClick={addForward} disabled={saving||!form.name||!form.url}
-            style={{marginTop:14,width:"100%",padding:"10px",borderRadius:9,
-              border:"none",background:saving||!form.name||!form.url
-                ?C.border:`linear-gradient(135deg,${C.g1},${C.g2})`,
-              color:saving||!form.name||!form.url?C.txd:"#000",
-              fontWeight:700,fontSize:13,cursor:"pointer"}}>
-            {saving?"Saving…":"+ Add Webhook Forward"}
-          </button>
-        </div>
+        </Modal>
 
-        {/* List */}
-        {loading && <p style={{color:C.txd,fontSize:13}}>Loading…</p>}
-        {!loading && forwards.length===0 && (
-          <p style={{color:C.txd,fontSize:13,textAlign:"center",padding:20}}>
-            No webhook forwards configured yet.
-          </p>
-        )}
-        {forwards.map(fwd=>(
-          <div key={fwd._id} style={{background:C.surf,borderRadius:10,padding:14,
-            border:`1px solid ${fwd.enabled?C.border:C.txd+"44"}`,
-            marginBottom:10,opacity:fwd.enabled?1:.6}}>
-            <div style={{display:"flex",justifyContent:"space-between",
-              alignItems:"flex-start",gap:10}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                  <span style={{fontWeight:800,fontSize:14}}>{fwd.name}</span>
-                  <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,fontWeight:700,
-                    background:fwd.enabled?`${C.g1}20`:`${C.red}20`,
-                    color:fwd.enabled?C.g1:C.red}}>
-                    {fwd.enabled?"ACTIVE":"PAUSED"}
-                  </span>
-                </div>
-                <div style={{fontSize:11,color:C.txs,fontFamily:"'JetBrains Mono',monospace",
-                  wordBreak:"break-all",marginBottom:4}}>
-                  {fwd.url}
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {fwd.events.map(ev=>(
-                    <span key={ev} style={{fontSize:10,padding:"1px 8px",borderRadius:20,
-                      fontWeight:700,background:`${C.blue}14`,color:C.blue}}>
-                      {ev}
-                    </span>
-                  ))}
-                  {fwd.secret && (
-                    <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,
-                      fontWeight:700,background:`${C.amber}14`,color:C.amber}}>
-                      🔑 secret set
-                    </span>
-                  )}
-                </div>
-                {fwd.lastSentAt && (
-                  <div style={{fontSize:11,color:C.txd,marginTop:4}}>
-                    Last sent: {new Date(fwd.lastSentAt).toLocaleString("en-IN",
-                      {timeZone:"Asia/Kolkata",dateStyle:"short",timeStyle:"short"})}
-                    {" "}·{" "}
-                    <span style={{color:fwd.lastStatus>=200&&fwd.lastStatus<300?C.g1:C.red}}>
-                      HTTP {fwd.lastStatus}
-                    </span>
-                  </div>
-                )}
-              </div>
-              {/* Actions */}
-              <div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
-                <button onClick={()=>testForward(fwd._id)}
-                  disabled={testing[fwd._id]}
-                  style={{padding:"5px 10px",borderRadius:7,
-                    border:`1px solid ${C.teal}40`,background:`${C.teal}10`,
-                    color:C.teal,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                  {testing[fwd._id]?"…":"⚡ Test"}
-                </button>
-                <button onClick={()=>toggleEnabled(fwd._id,fwd.enabled)}
-                  style={{padding:"5px 10px",borderRadius:7,
-                    border:`1px solid ${C.border}`,background:"transparent",
-                    color:C.txs,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                  {fwd.enabled?"⏸ Pause":"▶ Enable"}
-                </button>
-                <button onClick={()=>deleteForward(fwd._id)}
-                  style={{padding:"5px 10px",borderRadius:7,
-                    border:`1px solid ${C.red}40`,background:`${C.red}10`,
-                    color:C.red,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                  🗑 Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+        <DataTable clientPage={25} loading={loading} rows={forwards} maxHeight="none" rowKey={f=>f._id}
+          empty={<EmptyState icon={GitBranch} title="No webhook forwards configured yet"/>}
+          columns={[
+            {key:"name",label:"Name",primary:true,hideLabelOnCard:true,render:f=><span style={{fontWeight:700,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>{f.name}</span>},
+            {key:"url",label:"URL",hideBelow:"md",render:f=><span className="mono" title={f.url} style={{display:"block",fontSize:11,color:"var(--tx2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{f.url}</span>},
+            {key:"events",label:"Events",render:f=><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{(f.events||[]).map(ev=><Badge key={ev} tone="blue">{ev}</Badge>)}{f.secret&&<Badge tone="amber" icon={KeyRound}>secret</Badge>}</div>},
+            {key:"enabled",label:"State",render:f=><Badge tone={f.enabled?"green":"red"} icon={f.enabled?CheckCircle2:Pause}>{f.enabled?"Active":"Paused"}</Badge>},
+            {key:"lastStatus",label:"Last status",hideBelow:"md",render:f=>f.lastSentAt?(
+              <span style={{fontSize:12,whiteSpace:"nowrap"}}>
+                <span style={{color:f.lastStatus>=200&&f.lastStatus<300?C.g1:C.red,fontWeight:700}}>HTTP {f.lastStatus}</span>
+                <span style={{color:"var(--tx3)"}}> · {new Date(f.lastSentAt).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"short",timeStyle:"short"})}</span>
+              </span>):<span style={{color:"var(--tx3)"}}>Never</span>},
+            {key:"actions",label:"",align:"right",hideLabelOnCard:true,render:f=>(
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                <Btn size="sm" icon={Zap} title="Send test" onClick={()=>testForward(f._id)} loading={testing[f._id]} style={{color:C.teal}}>Test</Btn>
+                <Btn size="sm" icon={f.enabled?Pause:Play} title={f.enabled?"Pause":"Enable"} onClick={()=>toggleEnabled(f._id,f.enabled)}/>
+                <Btn size="sm" variant="danger" icon={Trash2} title="Delete" onClick={()=>deleteForward(f._id)}/>
+              </div>)},
+          ]}/>
+      </Card>
 
       {/* AI Assistant Settings */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,
-        borderRadius:12,padding:16,marginBottom:20}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>🤖 AI Assistant (Gemini)</div>
-        <p style={{fontSize:12,color:C.txs,marginBottom:14,lineHeight:1.6}}>
+      <Card title="AI Assistant (Gemini)" icon={Bot} style={{marginBottom:20}}>
+        <p style={{fontSize:12,color:C.txs,marginBottom:14,lineHeight:1.6,marginTop:-6}}>
           Gemini AI auto-replies to incoming WhatsApp messages based on HKM Vizag knowledge.
           Handles donation queries, temple info, seva details, and more.
         </p>
@@ -352,8 +271,8 @@ export default function Settings() {
           </label>
           <div style={{background:C.surf,borderRadius:8,padding:"9px 13px",
             border:`1px solid ${C.border}`,fontSize:12,color:cfg?.gemini?C.g1:C.red,
-            fontFamily:"monospace"}}>
-            {cfg?.gemini ? "✅ API Key Configured" : "⚠️ Not set — AI will not reply"}
+            fontFamily:"monospace",display:"flex",alignItems:"center",gap:7}}>
+            {cfg?.gemini ? <><CheckCircle2 size={14}/>API Key Configured</> : <><AlertTriangle size={14}/>Not set — AI will not reply</>}
           </div>
           {cfg?.geminiModel&&(
             <div style={{fontSize:11,color:C.txs,marginTop:4}}>
@@ -366,18 +285,18 @@ export default function Settings() {
         {cfg && <AiSwitch envEnabled={!!(cfg.aiEnabled && cfg.gemini)}/>}
 
         {/* Features */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:8,marginBottom:14}}>
           {[
-            {icon:"💬",title:"Auto-Reply",desc:"Replies to inbound messages automatically"},
-            {icon:"🎯",title:"Donation Focus",desc:"Guides devotees to seva and donation pages"},
-            {icon:"🚨",title:"Human Escalation",desc:"Flags complex queries for staff"},
-            {icon:"📊",title:"Interest Tracking",desc:"Logs donation interest in CRM"},
-            {icon:"🌐",title:"Telugu + English",desc:"Understands mixed language messages"},
-            {icon:"🛡️",title:"Guardrails",desc:"Only devotional/temple topics"},
+            {icon:MessageCircle,title:"Auto-Reply",desc:"Replies to inbound messages automatically"},
+            {icon:Target,title:"Donation Focus",desc:"Guides devotees to seva and donation pages"},
+            {icon:Siren,title:"Human Escalation",desc:"Flags complex queries for staff"},
+            {icon:BarChart3,title:"Interest Tracking",desc:"Logs donation interest in CRM"},
+            {icon:Globe,title:"Telugu + English",desc:"Understands mixed language messages"},
+            {icon:ShieldCheck,title:"Guardrails",desc:"Only devotional/temple topics"},
           ].map(f=>(
-            <div key={f.icon} style={{background:C.surf,borderRadius:8,padding:"10px 12px",
+            <div key={f.title} className="card-hover" style={{background:C.surf,borderRadius:8,padding:"10px 12px",
               border:`1px solid ${C.border}`}}>
-              <div style={{fontSize:18,marginBottom:4}}>{f.icon}</div>
+              <div style={{marginBottom:6,color:C.g1,display:"flex"}}><f.icon size={18}/></div>
               <div style={{fontWeight:700,fontSize:12}}>{f.title}</div>
               <div style={{fontSize:11,color:C.txs,marginTop:2}}>{f.desc}</div>
             </div>
@@ -388,61 +307,32 @@ export default function Settings() {
         <div style={{background:C.surf,borderRadius:8,padding:12,border:`1px solid ${C.border}`}}>
           <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>Conversation Modes (per contact in Inbox):</div>
           {[
-            {m:"🤖 AI Auto",   d:"Gemini replies instantly to every message"},
-            {m:"✏️ AI Draft",  d:"Gemini drafts reply, staff approves before sending"},
-            {m:"👤 Human Only",d:"AI disabled, staff handles manually"},
+            {m:"AI Auto", ic:Bot,   d:"Gemini replies instantly to every message"},
+            {m:"AI Draft", ic:PenLine, d:"Gemini drafts reply, staff approves before sending"},
+            {m:"Human Only", ic:User, d:"AI disabled, staff handles manually"},
           ].map(r=>(
             <div key={r.m} style={{display:"flex",gap:8,marginBottom:6,fontSize:12}}>
-              <span style={{fontWeight:700,minWidth:110}}>{r.m}</span>
+              <span style={{fontWeight:700,minWidth:120,display:"inline-flex",alignItems:"center",gap:6}}><r.ic size={13} color={C.g1}/>{r.m}</span>
               <span style={{color:C.txs}}>{r.d}</span>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* User Management */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,
-        borderRadius:12,padding:16,marginBottom:20}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>👥 Users</div>
-        <p style={{fontSize:12,color:C.txs,marginBottom:16,lineHeight:1.6}}>
+      <Card title="Users" icon={Users} style={{marginBottom:20}}>
+        <p style={{fontSize:12,color:C.txs,marginBottom:16,lineHeight:1.6,marginTop:-6}}>
           Manage login accounts. Admins have full access. Viewers can only view.
         </p>
 
-        {/* Add user form */}
-        <div style={{background:C.surf,borderRadius:10,padding:14,
-          border:`1px solid ${C.border}`,marginBottom:16}}>
-          <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:C.g1}}>+ Add User</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Name</label>
-              <input style={IS} placeholder="Full name"
-                value={uForm.name} onChange={e=>setUForm(f=>({...f,name:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Email</label>
-              <input style={IS} placeholder="email@example.com" type="email"
-                value={uForm.email} onChange={e=>setUForm(f=>({...f,email:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Password</label>
-              <input style={IS} placeholder="Set password" type="password"
-                value={uForm.password} onChange={e=>setUForm(f=>({...f,password:e.target.value}))}/>
-            </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
-                textTransform:"uppercase",letterSpacing:".5px",marginBottom:5}}>Role</label>
-              <select style={IS} value={uForm.role}
-                onChange={e=>setUForm(f=>({...f,role:e.target.value}))}>
-                <option value="viewer">Viewer (read only)</option>
-                <option value="admin">Admin (full access)</option>
-              </select>
-            </div>
-          </div>
-          <button disabled={uSaving||!uForm.name||!uForm.email||!uForm.password}
-            onClick={async()=>{
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          <Btn variant="primary" icon={UserPlus} onClick={()=>setUserOpen(true)}>Add User</Btn>
+        </div>
+        <Modal open={userOpen} onClose={()=>setUserOpen(false)} title="Add User" icon={UserPlus} width={480}
+          footer={<>
+            <Btn variant="ghost" onClick={()=>setUserOpen(false)}>Cancel</Btn>
+            <Btn variant="primary" icon={UserPlus} loading={uSaving} disabled={uSaving||!uForm.name||!uForm.email||!uForm.password}
+              onClick={async()=>{
               setUSaving(true);
               const r=await fetch("/api/users",{method:"POST",
                 headers:{"Content-Type":"application/json"},body:JSON.stringify(uForm)});
@@ -450,94 +340,75 @@ export default function Settings() {
               if(r.ok){
                 setUsers(p=>[d.user,...p]);
                 setUForm({name:"",email:"",password:"",role:"viewer"});
-                showToast("User created!");
+                setUserOpen(false);
+                showToast("User created");
               } else showToast(d.error||"Failed","error");
               setUSaving(false);
-            }}
-            style={{width:"100%",padding:"10px",borderRadius:9,border:"none",
-              background:uSaving||!uForm.name||!uForm.email||!uForm.password
-                ?C.border:`linear-gradient(135deg,${C.g1},${C.g2})`,
-              color:uSaving||!uForm.name||!uForm.email||!uForm.password?C.txd:"#000",
-              fontWeight:700,fontSize:13,cursor:"pointer"}}>
-            {uSaving?"Creating…":"+ Create User"}
-          </button>
-        </div>
-
-        {/* User list */}
-        {users.length===0 && (
-          <p style={{color:C.txd,fontSize:13,textAlign:"center",padding:16}}>
-            No extra users yet. Only admin env login active.
-          </p>
-        )}
-        {users.map(u=>(
-          <div key={u._id} style={{display:"flex",alignItems:"center",gap:12,
-            padding:"12px 14px",borderRadius:10,background:C.surf,
-            border:`1px solid ${C.border}`,marginBottom:8}}>
-            <div style={{width:38,height:38,borderRadius:"50%",flexShrink:0,
-              background:u.role==="admin"?`${C.g1}20`:`${C.blue}20`,
-              border:`2px solid ${u.role==="admin"?C.g1:C.blue}40`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:14,fontWeight:800,
-              color:u.role==="admin"?C.g1:C.blue}}>
-              {u.name.slice(0,2).toUpperCase()}
+            }}>
+              {uSaving?"Creating…":"Create User"}
+            </Btn>
+          </>}>
+          <div>
+            <div className="field">
+<label>Name</label>
+              <input className="input" placeholder="Full name"
+                value={uForm.name} onChange={e=>setUForm(f=>({...f,name:e.target.value}))}/>
             </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:700,fontSize:13}}>{u.name}</div>
-              <div style={{fontSize:11,color:C.txs}}>{u.email}</div>
-              <div style={{display:"flex",gap:6,marginTop:3}}>
-                <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
-                  background:u.role==="admin"?`${C.g1}18`:`${C.blue}18`,
-                  color:u.role==="admin"?C.g1:C.blue}}>
-                  {u.role}
-                </span>
-                <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:700,
-                  background:u.active?`${C.g1}10`:`${C.red}10`,
-                  color:u.active?C.g1:C.red}}>
-                  {u.active?"active":"disabled"}
-                </span>
-                {u.lastLogin&&(
-                  <span style={{fontSize:10,color:C.txd}}>
-                    last login: {new Date(u.lastLogin).toLocaleDateString("en-IN")}
-                  </span>
-                )}
-              </div>
+            <div className="field">
+<label>Email</label>
+              <input className="input" placeholder="email@example.com" type="email"
+                value={uForm.email} onChange={e=>setUForm(f=>({...f,email:e.target.value}))}/>
             </div>
-            <div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button onClick={async()=>{
-                await fetch(`/api/users/${u._id}`,{method:"PATCH",
-                  headers:{"Content-Type":"application/json"},
-                  body:JSON.stringify({active:!u.active})});
-                setUsers(p=>p.map(x=>x._id===u._id?{...x,active:!u.active}:x));
-              }} style={{padding:"5px 10px",borderRadius:7,
-                border:`1px solid ${C.border}`,background:"transparent",
-                color:C.txs,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                {u.active?"Disable":"Enable"}
-              </button>
-              <button onClick={async()=>{
-                if(!confirm(`Delete ${u.name}?`)) return;
-                await fetch(`/api/users/${u._id}`,{method:"DELETE"});
-                setUsers(p=>p.filter(x=>x._id!==u._id));
-                showToast("Deleted");
-              }} style={{padding:"5px 10px",borderRadius:7,
-                border:`1px solid ${C.red}40`,background:`${C.red}10`,
-                color:C.red,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                Delete
-              </button>
+            <div className="field">
+<label>Password</label>
+              <input className="input" placeholder="Set password" type="password"
+                value={uForm.password} onChange={e=>setUForm(f=>({...f,password:e.target.value}))}/>
+            </div>
+            <div className="field">
+<label>Role</label>
+              <select className="input" value={uForm.role}
+                onChange={e=>setUForm(f=>({...f,role:e.target.value}))}>
+                <option value="viewer">Viewer (read only)</option>
+                <option value="admin">Admin (full access)</option>
+              </select>
             </div>
           </div>
-        ))}
-      </div>
+        </Modal>
 
-      {toast && (
-        <div onClick={()=>setToast(null)} style={{
-          position:"fixed",bottom:80,right:16,zIndex:999,
-          padding:"11px 18px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
-          background:toast.t==="success"?`${C.g1}ee`:toast.t==="error"?`${C.red}ee`:`${C.amber}ee`,
-          color:toast.t==="error"?"#fff":"#000",
-        }}>
-          {toast.t==="success"?"✓":toast.t==="error"?"✕":"⚠"} {toast.m}
-        </div>
-      )}
+        <DataTable clientPage={25} rows={users} maxHeight="none" rowKey={u=>u._id}
+          empty={<EmptyState icon={Users} title="No extra users yet" hint="Only admin env login active."/>}
+          columns={[
+            {key:"name",label:"User",primary:true,hideLabelOnCard:true,render:u=>(
+              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,background:u.role==="admin"?`${C.g1}20`:`${C.blue}20`,
+                  border:`1px solid ${u.role==="admin"?C.g1:C.blue}50`,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:12,fontWeight:800,color:u.role==="admin"?C.g1:C.blue}}>{(u.name||"?").slice(0,2).toUpperCase()}</div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{u.name}</div>
+                  <div style={{fontSize:11,color:"var(--tx2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{u.email}</div>
+                </div>
+              </div>)},
+            {key:"role",label:"Role",render:u=><Badge tone={u.role==="admin"?"green":"blue"}>{u.role}</Badge>},
+            {key:"active",label:"Status",render:u=><Badge tone={u.active?"green":"red"}>{u.active?"active":"disabled"}</Badge>},
+            {key:"lastLogin",label:"Last login",hideBelow:"md",render:u=><span style={{color:"var(--tx2)",whiteSpace:"nowrap"}}>{u.lastLogin?new Date(u.lastLogin).toLocaleDateString("en-IN"):"Never"}</span>},
+            {key:"actions",label:"",align:"right",hideLabelOnCard:true,render:u=>(
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <Btn size="sm" icon={u.active?Pause:Play} title={u.active?"Disable":"Enable"} onClick={async()=>{
+                  await fetch(`/api/users/${u._id}`,{method:"PATCH",
+                    headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify({active:!u.active})});
+                  setUsers(p=>p.map(x=>x._id===u._id?{...x,active:!u.active}:x));
+                }}>{u.active?"Disable":"Enable"}</Btn>
+                <Btn size="sm" variant="danger" icon={Trash2} title="Delete" onClick={async()=>{
+                  if(!(await confirm({title:"Delete user?",message:`${u.name} will no longer be able to sign in.`,confirmLabel:"Delete",danger:true}))) return;
+                  await fetch(`/api/users/${u._id}`,{method:"DELETE"});
+                  setUsers(p=>p.filter(x=>x._id!==u._id));
+                  showToast("Deleted");
+                }}/>
+              </div>)},
+          ]}/>
+      </Card>
+
     </div>
   );
 }

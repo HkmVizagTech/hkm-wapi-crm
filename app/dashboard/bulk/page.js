@@ -1,6 +1,11 @@
 // rebuilt:1781482518 build:20260615000949
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { Send, Upload, FileText, Image as ImageIcon, Video, Check, X, ArrowLeft, ArrowRight, Radio, Search, Download, Lightbulb, Bot, Rocket, Zap, TriangleAlert, CircleCheck, CircleX, Clock, Info, CalendarClock, Loader2, FileSpreadsheet, CirclePause } from "lucide-react";
+import { PageHeader } from "@/components/ui";
+import DataTable from "@/components/DataTable";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import { useToast } from "@/components/Feedback";
 import { parseCSV, downloadCSV, relTime, normalizePhone } from "@/lib/utils";
 
 function parseBody(s) {
@@ -40,21 +45,21 @@ const IS = {
   borderRadius:10, padding:"10px 13px", color:C.tx, fontSize:13,
   outline:"none", boxSizing:"border-box", fontFamily:"inherit",
 };
-const Btn = ({ch,onClick,disabled,variant="primary",sx={}}) => {
-  const bg = variant==="primary" ? `linear-gradient(135deg,${C.g1},${C.g2})`
-           : variant==="teal"    ? `linear-gradient(135deg,${C.teal},#0097a7)`
-           : "transparent";
-  const col  = variant==="ghost" ? C.txs : "#000";
-  const bdr  = variant==="ghost" ? `1px solid ${C.border}` : "none";
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      padding:"10px 20px", borderRadius:9, border:bdr, fontWeight:700, fontSize:13,
-      background:bg, color:col, cursor:disabled?"not-allowed":"pointer",
-      opacity:disabled?.4:1, display:"inline-flex", alignItems:"center", gap:6, ...sx}}>
-      {ch}
-    </button>
-  );
-};
+const Btn = ({ch,onClick,disabled,variant="primary",sx={},icon:Icon,right:Right}) => (
+  <button onClick={onClick} disabled={disabled}
+    className={`ui-btn ${variant==="ghost"?"ghost":"primary"}`}
+    style={{padding:"10px 18px",fontSize:13,...sx}}>
+    {Icon&&<Icon size={15}/>}{ch}{Right&&<Right size={15}/>}
+  </button>
+);
+const hdrIcon = (f,size=16) => f==="IMAGE"?<ImageIcon size={size}/>:f==="DOCUMENT"?<FileText size={size}/>:<Video size={size}/>;
+const Label = ({children}) => (
+  <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
+    textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>{children}</label>
+);
+const IconRow = ({icon:Icon,color,children}) => (
+  <span style={{display:"inline-flex",alignItems:"center",gap:6,color}}><Icon size={14}/>{children}</span>
+);
 
 const STEPS = ["Template","Upload CSV","Preview & Schedule","Sending"];
 
@@ -72,7 +77,8 @@ export default function BulkSend() {
   const [sending,  setSending]  = useState(false);
   const [campId,   setCampId]   = useState(null);
   const [campData, setCampData] = useState(null);
-  const [toast,    setToast]    = useState(null);
+  const toast = useToast();
+  const [tplShown, setTplShown] = useState(30);
   const [aiState,  setAiState]  = useState(null);   // from /api/settings/ai
   const [pauseAi,  setPauseAi]  = useState(null);   // null = use default (on for 100+ recipients)
   const fileRef = useRef();
@@ -119,7 +125,8 @@ export default function BulkSend() {
   const isWebp = u => /(\.webp(\?|#|$))|([\/,]f_webp[\/,])/i.test(String(u||""));
   const mediaBlocked = hasHeader && headerFmt==="IMAGE" && isWebp(mediaUrl);
 
-  const showToast = (m,t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+  const showToast = (m,t="success") => toast(m,t);
+  useEffect(()=>{ setTplShown(30); },[catFilter,tplSearch,provider]);
 
   const getParams = row => (tpl?.params||[]).map((_,i) => {
     const v = row[`param${i+1}`];
@@ -274,9 +281,9 @@ export default function BulkSend() {
       setSending(false);
 
       if (isScheduled) {
-        showToast(`✅ Scheduled ${total.toLocaleString()} contacts in ${batches} batch${batches>1?"es":""}`);
+        showToast(`Scheduled ${total.toLocaleString()} contacts in ${batches} batch${batches>1?"es":""}`);
       } else {
-        showToast(`✅ ${batches} batch${batches>1?"es":""} queued! Server will send ${total.toLocaleString()} messages now.`);
+        showToast(`${batches} batch${batches>1?"es":""} queued! Server will send ${total.toLocaleString()} messages now.`);
       }
 
     } catch(e) {
@@ -295,28 +302,28 @@ export default function BulkSend() {
   const minTime     = minDateTime.slice(11,16);
 
   return (
-    <div style={{padding:24, maxWidth:900, margin:"0 auto"}}>
-      <div style={{marginBottom:24}}>
-        <h1 style={{fontSize:20,fontWeight:800}}>📤 Bulk Send</h1>
-        <p style={{fontSize:13,color:C.txs,marginTop:2}}>Send template messages to multiple contacts via CSV</p>
-      </div>
+    <div className="page-wrap" style={{maxWidth:"min(1180px,100%)"}}>
+      <PageHeader icon={Send} title="Bulk Send" subtitle="Send template messages to multiple contacts via CSV"/>
 
       {/* Step bar */}
-      <div style={{display:"flex",alignItems:"center",marginBottom:28}}>
+      <div className="ui-card" style={{display:"flex",alignItems:"center",padding:"16px 18px",marginBottom:20}}>
         {STEPS.map((s,i)=>(
           <div key={s} style={{display:"flex",alignItems:"center",flex:i<3?1:0}}>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-              <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",flexShrink:0,
                 justifyContent:"center",fontSize:12,fontWeight:800,
-                background:step>i?C.g1:step===i?C.g1:C.border,
-                color:step>=i?"#000":C.txd}}>{step>i?"✓":i+1}</div>
-              <span style={{fontSize:10,fontWeight:700,whiteSpace:"nowrap",
-                color:step>=i?C.g1:C.txd}}>{s}</span>
+                background:step>=i?`linear-gradient(135deg,${C.g1},${C.g2})`:C.surf,
+                border:step>=i?"none":`1px solid ${C.border}`,
+                boxShadow:step===i?`0 0 0 4px ${C.g1}22`:"none",
+                color:step>=i?"#04130a":C.txd}}>{step>i?<Check size={15} strokeWidth={3}/>:i+1}</div>
+              <span className={step===i?"":"step-lbl"} style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",
+                color:step>=i?C.tx:C.txd}}>{s}</span>
             </div>
-            {i<3&&<div style={{flex:1,height:2,margin:"0 6px",marginBottom:16,
+            {i<3&&<div style={{flex:1,height:2,margin:"0 10px",minWidth:10,borderRadius:2,
               background:step>i?C.g1:C.border}}/>}
           </div>
         ))}
+        <style>{`@media(max-width:640px){.step-lbl{display:none}}`}</style>
       </div>
 
       {/* STEP 0 — Pick template */}
@@ -326,20 +333,20 @@ export default function BulkSend() {
           <div style={{marginBottom:16}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:C.txs,
               textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
-              📡 Sending Provider
+              <IconRow icon={Radio}>Sending Provider</IconRow>
             </label>
-            <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {[
                 {id:"flaxxa",  label:"Flaxxa WAPI",  sub:"+91 90631 72108"},
                 {id:"gupshup", label:"Gupshup",      sub:"+91 70751 76108"},
               ].map(p=>(
                 <div key={p.id} onClick={()=>setProvider(p.id)} style={{
-                  flex:1,padding:"10px 14px",borderRadius:10,cursor:"pointer",
+                  flex:"1 1 200px",padding:"12px 14px",borderRadius:12,cursor:"pointer",
                   border:`2px solid ${provider===p.id?C.g1:C.border}`,
                   background:provider===p.id?`${C.g1}08`:C.surf,
                   transition:"all .15s"}}>
-                  <div style={{fontWeight:800,fontSize:13,color:provider===p.id?C.g1:C.tx}}>
-                    {provider===p.id?"✓ ":""}{p.label}
+                  <div style={{fontWeight:800,fontSize:13,color:provider===p.id?C.g1:C.tx,display:"flex",alignItems:"center",gap:6}}>
+                    {provider===p.id&&<Check size={14} strokeWidth={3}/>}{p.label}
                   </div>
                   <div style={{fontSize:11,color:C.txs,marginTop:2}}>{p.sub}</div>
                 </div>
@@ -347,10 +354,14 @@ export default function BulkSend() {
             </div>
           </div>
           {tplLoading && (
-            <div style={{textAlign:"center",padding:40,color:C.txd}}>
-              <div style={{width:28,height:28,margin:"0 auto 10px",border:`3px solid ${C.border}`,
-                borderTopColor:C.g1,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
-              <p style={{fontSize:13}}>Loading templates from {provider==="gupshup"?"Gupshup":"Flaxxa"}…</p>
+            <div>
+              <p style={{fontSize:13,color:C.txs,marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                <Loader2 size={15} color={C.g1} style={{animation:"spin .8s linear infinite"}}/>
+                Loading templates from {provider==="gupshup"?"Gupshup":"Flaxxa"}…
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {[0,1,2,3].map(i=><div key={i} className="skeleton" style={{height:64,borderRadius:12}}/>)}
+              </div>
             </div>
           )}
           {!tplLoading && <>
@@ -359,23 +370,24 @@ export default function BulkSend() {
               <span style={{color:C.txd}}> Tip: double-click a template to continue straight away.</span>
             </p>
             <div style={{position:"relative",marginBottom:10}}>
+              <Search size={15} color={C.txd} style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)"}}/>
               <input style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
-                borderRadius:10,padding:"9px 34px 9px 13px",color:C.tx,fontSize:13,outline:"none",
+                borderRadius:10,padding:"10px 34px 10px 38px",color:C.tx,fontSize:13,outline:"none",
                 boxSizing:"border-box"}}
-                placeholder="🔍 Search by template name or message text…"
+                type="search" name="bulk-tpl-search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} placeholder="Search by template name or message text…"
                 value={tplSearch} onChange={e=>setTplSearch(e.target.value)}/>
               {tplSearch&&(
                 <button onClick={()=>setTplSearch("")} title="Clear search" style={{
                   position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
-                  background:"none",border:"none",color:C.txs,fontSize:14,cursor:"pointer",padding:4}}>✕</button>
+                  background:"none",border:"none",color:C.txs,cursor:"pointer",padding:4,display:"flex"}}><X size={14}/></button>
               )}
             </div>
             <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4,marginBottom:10}}>
               {cats.map(c=>(
                 <button key={c} onClick={()=>setCatFilter(c)} style={{
-                  padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,
-                  background:catFilter===c?C.g1:C.surf,
-                  color:catFilter===c?"#000":C.txs,
+                  padding:"6px 13px",borderRadius:20,border:`1px solid ${catFilter===c?"transparent":C.border}`,flexShrink:0,
+                  background:catFilter===c?`linear-gradient(135deg,${C.g1},${C.g2})`:C.surf,
+                  color:catFilter===c?"#04130a":C.txs,
                   fontSize:11,fontWeight:700,cursor:"pointer"}}>
                   {c} <span style={{opacity:.65}}>({catCount(c)})</span>
                 </button>
@@ -387,14 +399,15 @@ export default function BulkSend() {
 
             {/* Scrollable list — keeps the page short no matter how many templates exist */}
             <div style={{maxHeight:"min(560px, 55vh)",overflowY:"auto",
-              border:`1px solid ${C.border}`,borderRadius:12,padding:8,background:C.surf}}>
+              border:`1px solid ${C.border}`,borderRadius:14,padding:8,background:C.surf}}>
               {approved.length===0&&(
-                <p style={{textAlign:"center",color:C.txd,padding:20,fontSize:13}}>
+                <p style={{textAlign:"center",color:C.txd,padding:24,fontSize:13}}>
+                  <FileText size={22} style={{display:"block",margin:"0 auto 8px"}}/>
                   No templates match{tplSearch?` "${tplSearch}"`:""}
                 </p>
               )}
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {approved.map(t=>{
+                {approved.slice(0,tplShown).map(t=>{
                   const sel = tplId===t.id;
                   return (
                     <div key={t.id} onClick={()=>setTplId(t.id)}
@@ -402,20 +415,18 @@ export default function BulkSend() {
                       style={{
                         background:sel?"rgba(37,211,102,.06)":C.card,
                         border:`${sel?2:1}px solid ${sel?C.g1:C.border}`,
-                        borderRadius:10,padding:"10px 12px",cursor:"pointer",transition:"all .15s"}}>
+                        borderRadius:12,padding:"11px 13px",cursor:"pointer",transition:"all .15s"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
                             <span style={{fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace",wordBreak:"break-all"}}>{t.name}</span>
                             {t.header&&["IMAGE","DOCUMENT","VIDEO"].includes(String(t.header))&&(
-                              <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
-                                background:`${C.blue}18`,color:C.blue,flexShrink:0}}>
-                                {t.header==="IMAGE"?"🖼 IMAGE":t.header==="DOCUMENT"?"📄 DOC":"🎥 VIDEO"}
+                              <span className="ui-badge blue">
+                                {hdrIcon(String(t.header),11)}{t.header==="IMAGE"?"IMAGE":t.header==="DOCUMENT"?"DOC":"VIDEO"}
                               </span>
                             )}
                             {t.params.length>0&&(
-                              <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,
-                                background:`${C.blue}14`,color:C.blue,flexShrink:0}}>
+                              <span className="ui-badge purple">
                                 {t.params.length} var{t.params.length>1?"s":""}
                               </span>
                             )}
@@ -426,7 +437,7 @@ export default function BulkSend() {
                           </p>
                           {sel&&(
                             <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
-                              <Btn ch="Use this template →" onClick={e=>{e.stopPropagation();setStep(1);}}
+                              <Btn ch="Use this template" right={ArrowRight} onClick={e=>{e.stopPropagation();setStep(1);}}
                                 sx={{padding:"7px 14px",fontSize:12}}/>
                             </div>
                           )}
@@ -435,20 +446,21 @@ export default function BulkSend() {
                           border:`2px solid ${sel?C.g1:C.border}`,
                           background:sel?C.g1:"transparent",
                           display:"flex",alignItems:"center",justifyContent:"center",
-                          fontSize:11,color:"#000",fontWeight:800}}>
-                          {sel?"✓":""}
+                          color:"#04130a"}}>
+                          {sel&&<Check size={12} strokeWidth={3.5}/>}
                         </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              <InfiniteSentinel onVisible={()=>setTplShown(n=>n+30)} hasMore={approved.length>tplShown}/>
             </div>
           </>}
 
           {/* Sticky action bar — Next is always visible, no scrolling needed */}
           <div style={{position:"sticky",bottom:0,zIndex:5,marginTop:14,
-            padding:"12px 14px",borderRadius:12,
+            padding:"12px 14px",borderRadius:14,
             background:C.card,border:`1px solid ${tpl?C.g1:C.border}`,
             boxShadow:"0 -8px 24px rgba(0,0,0,.45)",
             display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
@@ -460,14 +472,14 @@ export default function BulkSend() {
                     <span style={{fontWeight:800,fontSize:13,color:C.g1,fontFamily:"'JetBrains Mono',monospace",
                       overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tpl.name}</span>
                     <button onClick={()=>setTplId("")} title="Clear selection" style={{
-                      background:"none",border:"none",color:C.txd,fontSize:12,cursor:"pointer",padding:2,flexShrink:0}}>✕</button>
+                      background:"none",border:"none",color:C.txd,cursor:"pointer",padding:2,flexShrink:0,display:"flex"}}><X size={14}/></button>
                   </div>
                 </>
               ):(
                 <span style={{fontSize:13,color:C.txd}}>Select a template to continue</span>
               )}
             </div>
-            <Btn ch="Next: Upload CSV →" onClick={()=>tplId&&setStep(1)} disabled={!tplId}/>
+            <Btn ch="Next: Upload CSV" right={ArrowRight} onClick={()=>tplId&&setStep(1)} disabled={!tplId}/>
           </div>
         </div>
       )}
@@ -476,8 +488,7 @@ export default function BulkSend() {
       {step===1&&tpl&&(
         <div>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
-            <button onClick={()=>setStep(0)} style={{background:"none",border:"none",
-              color:C.txs,fontSize:14,cursor:"pointer"}}>← Back</button>
+            <button onClick={()=>setStep(0)} className="ui-btn ghost sm"><ArrowLeft size={14}/> Back</button>
             <div>
               <h2 style={{fontSize:15,fontWeight:800}}>Upload CSV</h2>
               <p style={{fontSize:12,color:C.txs}}>Template: <strong style={{color:C.g1}}>{tpl.name}</strong></p>
@@ -486,10 +497,10 @@ export default function BulkSend() {
 
           {/* Image header upload */}
           {hasHeader&&(
-            <div style={{background:C.card,border:`2px solid ${C.blue}40`,borderRadius:12,
+            <div className="ui-card" style={{border:`1px solid ${C.blue}55`,
               padding:16,marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:14,marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
-                {headerFmt==="IMAGE"?"🖼":headerFmt==="DOCUMENT"?"📄":"🎥"} {headerFmt} Header Required
+                <span style={{color:C.blue,display:"flex"}}>{hdrIcon(headerFmt,18)}</span> {headerFmt} Header Required
               </div>
               <p style={{fontSize:12,color:C.txs,marginBottom:10,lineHeight:1.5}}>
                 This template has a <strong style={{color:C.blue}}>{headerFmt}</strong> header.
@@ -510,7 +521,7 @@ export default function BulkSend() {
                 <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
                   background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
                   color:"#f44336",fontSize:12,fontWeight:600}}>
-                  ✕ WhatsApp doesn't accept WebP images. Use a JPG or PNG link — on Cloudinary just change
+                  <X size={13} style={{verticalAlign:"-2px",marginRight:4}}/>WhatsApp doesn't accept WebP images. Use a JPG or PNG link — on Cloudinary just change
                   {" "}<code>.webp</code> to <code>.jpg</code> at the end of the URL.
                 </div>
               )}
@@ -518,7 +529,7 @@ export default function BulkSend() {
                 <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
                   background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
                   color:"#f44336",fontSize:12,fontWeight:600}}>
-                  ✕ This is a local file (base64). Please upload it to{" "}
+                  <X size={13} style={{verticalAlign:"-2px",marginRight:4}}/>This is a local file (base64). Please upload it to{" "}
                   <a href="/dashboard/media" target="_blank" style={{color:"#f44336"}}>
                     Media Library
                   </a>{" "}
@@ -534,19 +545,19 @@ export default function BulkSend() {
                     onError={e=>e.target.style.display="none"}/>
                 </div>
               )}
-              <p style={{fontSize:11,color:C.txd,marginTop:8}}>
-                💡 Upload images to Media Library first to get a Cloudinary URL →{" "}
+              <p style={{fontSize:11,color:C.txd,marginTop:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                <Lightbulb size={13}/> Upload images to Media Library first to get a Cloudinary URL{" "}
                 <a href="/dashboard/media" target="_blank" style={{color:C.teal}}>Media Library</a>
               </p>
             </div>
           )}
 
           {/* CSV format */}
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:14}}>
+          <div className="ui-card" style={{padding:16,marginBottom:14}}>
             <p style={{fontSize:11,fontWeight:700,color:C.txs,textTransform:"uppercase",
               letterSpacing:".5px",marginBottom:10}}>Required CSV format</p>
             <div style={{overflowX:"auto",marginBottom:10}}>
-              <table style={{borderCollapse:"collapse",fontSize:12}}>
+              <table className="ui-table" style={{width:"auto",fontSize:12}}>
                 <thead><tr>
                   {["phone *","name",...(tpl.params||[]).map((_,i)=>`param${i+1}`)].map(h=>(
                     <th key={h} style={{padding:"6px 12px",textAlign:"left",fontWeight:800,
@@ -572,8 +583,8 @@ export default function BulkSend() {
           {/* Provider (locked to the picked template — change it on the Template step) */}
           <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,
             background:C.card,border:`1px solid ${C.border}`,display:"flex",
-            justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:12,color:C.txs}}>📡 Sending via</span>
+            justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:12,color:C.txs}}><IconRow icon={Radio}>Sending via</IconRow></span>
             <span style={{fontWeight:800,fontSize:13,color:C.g1}}>
               {provider==="gupshup"?"Gupshup · +91 70751 76108":"Flaxxa WAPI · +91 90631 72108"}
             </span>
@@ -590,53 +601,51 @@ export default function BulkSend() {
           <button onClick={()=>downloadCSV(`${tpl.name}_sample.csv`,
             ["phone","name",...(tpl.params||[]).map((_,i)=>`param${i+1}`)],
             [{phone:"918977761187",name:"Mukunda",...Object.fromEntries((tpl.params||[]).map((p,i)=>[`param${i+1}`,p+" value"]))}])}
-            style={{width:"100%",padding:10,borderRadius:9,border:"none",marginBottom:14,
-              background:`linear-gradient(135deg,${C.teal},#0097a7)`,
-              color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-            ⬇ Download Sample CSV
+            className="ui-btn" style={{width:"100%",padding:10,marginBottom:14}}>
+            <Download size={15}/> Download Sample CSV
           </button>
 
           <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{display:"none"}}/>
           <div onClick={()=>fileRef.current?.click()} style={{
-            border:`2px dashed ${C.border}`,borderRadius:12,padding:"32px 20px",
-            textAlign:"center",cursor:"pointer"}}
+            border:`2px dashed ${C.border}`,borderRadius:14,padding:"36px 20px",
+            textAlign:"center",cursor:"pointer",background:C.surf,transition:"border-color .15s"}}
             onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.g1;}}
             onDragLeave={e=>e.currentTarget.style.borderColor=C.border}
             onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.border;
               const f=e.dataTransfer.files[0];if(!f)return;
               const ev={target:{files:[f],value:""}};handleFile(ev);}}>
-            <div style={{fontSize:38,marginBottom:8}}>📁</div>
+            <div style={{width:52,height:52,margin:"0 auto 10px",borderRadius:14,display:"flex",alignItems:"center",
+              justifyContent:"center",background:`${C.g1}14`,color:C.g1}}><Upload size={24}/></div>
             <div style={{fontWeight:700,fontSize:14}}>Tap to upload CSV or drag & drop</div>
             <div style={{fontSize:12,color:C.txs,marginTop:4}}>Supports .csv and .txt</div>
           </div>
-          {csvErr&&<p style={{color:C.red,fontSize:13,fontWeight:600,marginTop:10}}>✕ {csvErr}</p>}
+          {csvErr&&<p style={{color:C.red,fontSize:13,fontWeight:600,marginTop:10,display:"flex",gap:7,alignItems:"flex-start",
+            padding:"10px 14px",borderRadius:10,background:"rgba(244,67,54,.08)",border:"1px solid rgba(244,67,54,.3)"}}><CircleX size={16} style={{flexShrink:0,marginTop:1}}/><span>{csvErr}</span></p>}
         </div>
       )}
 
       {/* STEP 2 — Preview & Schedule */}
       {step===2&&tpl&&(
         <div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
             <div>
               <h2 style={{fontSize:15,fontWeight:800}}>Preview & Schedule</h2>
               <p style={{fontSize:12,color:C.txs}}>{csvRows.length} recipients · <strong style={{color:C.g1}}>{tpl.name}</strong></p>
             </div>
-            <button onClick={()=>{setCsvRows([]);setStep(1);}} style={{
-              background:"none",border:`1px solid ${C.border}`,borderRadius:8,
-              color:C.txs,fontSize:13,padding:"6px 12px",cursor:"pointer"}}>← Re-upload</button>
+            <button onClick={()=>{setCsvRows([]);setStep(1);}} className="ui-btn sm"><ArrowLeft size={14}/> Re-upload</button>
           </div>
 
           {/* Image header preview */}
           {hasHeader&&mediaUrl&&(
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+            <div className="ui-card" style={{
               padding:14,marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
               {headerFmt==="IMAGE"?(
                 <img src={mediaUrl} alt="header" style={{width:60,height:60,borderRadius:8,objectFit:"cover"}}
                   onError={e=>e.target.style.display="none"}/>
               ):(
                 <div style={{width:60,height:60,borderRadius:8,background:C.surf,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>
-                  {headerFmt==="DOCUMENT"?"📄":"🎥"}
+                  display:"flex",alignItems:"center",justifyContent:"center",color:C.blue}}>
+                  {hdrIcon(headerFmt,26)}
                 </div>
               )}
               <div>
@@ -647,18 +656,18 @@ export default function BulkSend() {
           )}
 
           {/* Schedule toggle */}
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+          <div className="ui-card" style={{
             padding:16,marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:schedule?14:0}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:schedule?14:0,gap:8,flexWrap:"wrap"}}>
               <div>
-                <div style={{fontWeight:700,fontSize:14}}>⏰ Schedule Send</div>
+                <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}><CalendarClock size={16} color={C.g1}/> Schedule Send</div>
                 <div style={{fontSize:12,color:C.txs,marginTop:2}}>Send at a specific date & time</div>
               </div>
               <button onClick={()=>setSchedule(s=>!s)} style={{
-                padding:"6px 16px",borderRadius:20,border:`1px solid ${schedule?C.g1:C.border}`,
+                display:"inline-flex",alignItems:"center",gap:6,padding:"6px 16px",borderRadius:20,border:`1px solid ${schedule?C.g1:C.border}`,
                 background:schedule?`${C.g1}18`:"transparent",
                 color:schedule?C.g1:C.txs,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                {schedule?"✓ Scheduled":"Send Now"}
+                {schedule?<><Check size={13} strokeWidth={3}/> Scheduled</>:"Send Now"}
               </button>
             </div>
             {schedule&&(
@@ -679,9 +688,9 @@ export default function BulkSend() {
                 {schedDate&&schedTime&&(
                   <div style={{gridColumn:"span 2",padding:"10px 14px",borderRadius:8,
                     background:`${C.g1}08`,border:`1px solid ${C.g1}20`,
-                    fontSize:13,color:C.g1,fontWeight:600}}>
-                    ✓ Will send on {new Date(`${schedDate}T${schedTime}`).toLocaleString("en-IN",
-                      {dateStyle:"full",timeStyle:"short"})}
+                    fontSize:13,color:C.g1,fontWeight:600,display:"flex",gap:7,alignItems:"center"}}>
+                    <CircleCheck size={15} style={{flexShrink:0}}/><span>Will send on {new Date(`${schedDate}T${schedTime}`).toLocaleString("en-IN",
+                      {dateStyle:"full",timeStyle:"short"})}</span>
                   </div>
                 )}
               </div>
@@ -690,14 +699,14 @@ export default function BulkSend() {
 
           {/* AI auto-reply load protection */}
           {aiState && (
-            <div style={{background:C.card,border:`1px solid ${aiWillReply?C.amber+"55":C.border}`,borderRadius:12,
+            <div className="ui-card" style={{border:`1px solid ${aiWillReply?C.amber+"55":C.border}`,
               padding:"12px 16px",marginBottom:14}}>
               {aiWillReply ? (
                 <label style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
                   <input type="checkbox" checked={pauseAiOn} onChange={e=>setPauseAi(e.target.checked)}
                     style={{marginTop:3,accentColor:C.g1,width:16,height:16}}/>
                   <div>
-                    <div style={{fontWeight:700,fontSize:13}}>⏸ Pause AI auto-replies for 24 hours after sending</div>
+                    <div style={{fontWeight:700,fontSize:13,display:"flex",alignItems:"center",gap:7}}><CirclePause size={15} color={C.amber}/> Pause AI auto-replies for 24 hours after sending</div>
                     <div style={{fontSize:12,color:C.txs,marginTop:2,lineHeight:1.5}}>
                       AI replies are currently <strong style={{color:C.g1}}>ON</strong>. Every reply to this campaign would trigger an AI call —
                       with {csvRows.length.toLocaleString()} recipients that can overload the server. Replies still land in the Inbox for staff.
@@ -706,10 +715,10 @@ export default function BulkSend() {
                   </div>
                 </label>
               ) : (
-                <div style={{fontSize:12,color:C.txs}}>
-                  🤖 AI auto-replies are <strong style={{color:C.amber}}>{aiState.envEnabled?"PAUSED":"OFF"}</strong>
+                <div style={{fontSize:12,color:C.txs,display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <Bot size={15} color={C.amber} style={{flexShrink:0,marginTop:1}}/><span>AI auto-replies are <strong style={{color:C.amber}}>{aiState.envEnabled?"PAUSED":"OFF"}</strong>
                   {aiState.paused&&aiState.pausedUntil?` until ${new Date(aiState.pausedUntil).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}`:""}
-                  {" "}— replies to this campaign will go to the Inbox only.
+                  {" "}— replies to this campaign will go to the Inbox only.</span>
                 </div>
               )}
             </div>
@@ -717,62 +726,47 @@ export default function BulkSend() {
 
           {/* Warning */}
           <div style={{padding:"10px 14px",borderRadius:10,marginBottom:16,fontSize:13,
-            background:"rgba(255,179,0,.06)",border:"1px solid rgba(255,179,0,.3)",color:C.amber}}>
-            ⚠ This will send <strong>{csvRows.length} WhatsApp messages</strong>.
-            ~{Math.ceil(csvRows.length*delay/60000)} min at {delay}ms delay.
+            background:"rgba(255,179,0,.06)",border:"1px solid rgba(255,179,0,.3)",color:C.amber,
+            display:"flex",gap:8,alignItems:"flex-start"}}>
+            <TriangleAlert size={16} style={{flexShrink:0,marginTop:1}}/>
+            <span>This will send <strong>{csvRows.length} WhatsApp messages</strong>.
+            ~{Math.ceil(csvRows.length*delay/60000)} min at {delay}ms delay.</span>
           </div>
 
           {/* Recipients preview */}
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+          <div className="ui-card" style={{
             overflow:"hidden",marginBottom:18}}>
             <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,
               fontWeight:700,fontSize:13,display:"flex",justifyContent:"space-between"}}>
               <span>Recipients Preview</span>
               <span style={{color:C.txs,fontWeight:400}}>{csvRows.length} rows</span>
             </div>
-            <div style={{maxHeight:280,overflowY:"auto"}}>
-              {csvRows.slice(0,20).map((row,i)=>{
-                const params=getParams(row);
-                let preview=tpl.body;
-                params.forEach((v,idx)=>{preview=preview.replace(new RegExp(`\\{\\{${idx+1}\\}\\}`,"g"),v||`{{${idx+1}}}`);});
-                return (
-                  <div key={i} style={{padding:"11px 16px",borderBottom:`1px solid ${C.border}50`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                      <span style={{fontWeight:700,fontSize:13}}>{row.name||row.phone}</span>
-                      <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:C.txs}}>{row.phone}</span>
-                    </div>
-                    {params.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:5}}>
-                        {params.map((v,idx)=>(
-                          <span key={idx} style={{fontSize:10,padding:"1px 8px",borderRadius:20,
-                            background:`${C.blue}12`,color:C.blue}}>{`{{${idx+1}}}`}: {v||<em style={{opacity:.5}}>empty</em>}</span>
-                        ))}
-                      </div>
-                    )}
-                    <p style={{fontSize:11,color:C.txd,lineHeight:1.5,
-                      overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
-                      {preview}
-                    </p>
-                  </div>
-                );
-              })}
-              {csvRows.length>20&&<p style={{padding:"10px 16px",fontSize:12,color:C.txd,textAlign:"center"}}>+{csvRows.length-20} more rows</p>}
-            </div>
+            <DataTable dense clientPage={50} maxHeight={340} rows={csvRows} rowKey={(r,i)=>i}
+              footer={`${csvRows.length.toLocaleString("en-IN")} recipients`}
+              columns={[
+                {key:"name",label:"Recipient",primary:true,render:r=><span style={{fontWeight:700,display:"block",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||r.phone}</span>},
+                {key:"phone",label:"Phone",mono:true},
+                {key:"msg",label:"Message preview",render:row=>{
+                  let preview=tpl.body;
+                  getParams(row).forEach((v,idx)=>{preview=preview.replace(new RegExp(`\\{\\{${idx+1}\\}\\}`,"g"),v||`{{${idx+1}}}`);});
+                  return <span style={{fontSize:11.5,color:C.txs,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:520,wordBreak:"break-word"}}>{preview}</span>;}},
+              ]}/>
           </div>
 
-          <div style={{display:"flex",gap:10}}>
-            <Btn ch="← Back" variant="ghost" onClick={()=>{setCsvRows([]);setStep(1);}}/>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <Btn ch="Back" icon={ArrowLeft} variant="ghost" onClick={()=>{setCsvRows([]);setStep(1);}}/>
             <Btn
+              icon={schedule&&schedDate&&schedTime?CalendarClock:Rocket}
               ch={schedule&&schedDate&&schedTime
-                ? `⏰ Schedule for ${schedDate} ${schedTime}`
-                : `🚀 Send to ${csvRows.length} Contacts Now`}
+                ? `Schedule for ${schedDate} ${schedTime}`
+                : `Send to ${csvRows.length} Contacts Now`}
               onClick={startBulk}
               disabled={hasHeader&&!mediaUrl||mediaBlocked||(schedule&&(!schedDate||!schedTime))}
-              sx={{flex:1,justifyContent:"center"}}/>
+              sx={{flex:"1 1 200px",justifyContent:"center"}}/>
           </div>
           {hasHeader&&!mediaUrl&&(
             <p style={{fontSize:12,color:C.red,marginTop:8,textAlign:"center"}}>
-              ⚠ This template requires a {headerFmt} URL — add it in Step 2
+              <TriangleAlert size={13} style={{verticalAlign:"-2px",marginRight:4}}/>This template requires a {headerFmt} URL — add it in Step 2
             </p>
           )}
         </div>
@@ -781,55 +775,57 @@ export default function BulkSend() {
       {/* STEP 3 — Sending / Results */}
       {step===3&&(
         <div>
-          <h2 style={{fontSize:15,fontWeight:800,marginBottom:16}}>
-            {campData?.status==="scheduled" ? "⏰ Campaign Scheduled!"
-             : campData?.status==="queued"  ? "✅ Campaign Queued!"
-             : campData?.status==="done"    ? "✅ Campaign Complete!"
-             : sending ? "⏳ Saving batches…"
-             : "✅ Done!"}
+          <h2 style={{fontSize:16,fontWeight:800,marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+            {campData?.status==="scheduled" ? <><CalendarClock size={18} color={C.g1}/> Campaign Scheduled!</>
+             : campData?.status==="queued"  ? <><CircleCheck size={18} color={C.g1}/> Campaign Queued!</>
+             : campData?.status==="done"    ? <><CircleCheck size={18} color={C.g1}/> Campaign Complete!</>
+             : sending ? <><Loader2 size={18} color={C.g1} style={{animation:"spin .8s linear infinite"}}/> Saving batches…</>
+             : <><CircleCheck size={18} color={C.g1}/> Done!</>}
           </h2>
           {sending && campData?.totalContacts > 100 && (
             <div style={{padding:"10px 14px",borderRadius:9,marginBottom:14,fontSize:13,
               background:"rgba(41,121,255,.08)",border:"1px solid rgba(41,121,255,.25)",
-              color:"#2979ff",lineHeight:1.6}}>
-              ℹ This is a large campaign ({campData?.totalContacts?.toLocaleString()} messages).
+              color:"#2979ff",lineHeight:1.6,display:"flex",gap:8,alignItems:"flex-start"}}>
+              <Info size={16} style={{flexShrink:0,marginTop:2}}/><span>This is a large campaign ({campData?.totalContacts?.toLocaleString()} messages).
               It's running in the background on the server — you can safely close this page
               and check progress in <strong>Campaigns</strong>.
-              Estimated time: ~{Math.ceil((campData?.totalContacts||0)*1.2/3600)} hours.
+              Estimated time: ~{Math.ceil((campData?.totalContacts||0)*1.2/3600)} hours.</span>
             </div>
           )}
 
           {campData?.status==="queued"&&(
-            <div style={{background:C.card,border:`1px solid ${C.g1}`,
-              borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
-              <div style={{fontSize:40,marginBottom:10}}>⚡</div>
+            <div className="ui-card" style={{border:`1px solid ${C.g1}`,
+              padding:24,marginBottom:16,textAlign:"center"}}>
+              <div style={{width:52,height:52,margin:"0 auto 10px",borderRadius:14,display:"flex",alignItems:"center",
+                justifyContent:"center",background:`${C.g1}14`,color:C.g1}}><Zap size={26}/></div>
               <div style={{fontWeight:800,fontSize:16,color:C.g1,marginBottom:6}}>Sending Now!</div>
               <div style={{fontSize:13,color:C.txs,lineHeight:1.6}}>
                 <strong style={{color:C.tx}}>{campData?.totalContacts?.toLocaleString()} messages</strong> are queued.<br/>
                 The server is sending them in the background.<br/>
                 <a href="/dashboard/campaigns" style={{color:C.g1,fontWeight:700}}>
-                  View progress in Campaigns →
+                  View progress in Campaigns <ArrowRight size={13} style={{verticalAlign:"-2px"}}/>
                 </a>
               </div>
             </div>
           )}
           {campData?.status==="scheduled"&&(
-            <div style={{background:C.card,border:`1px solid ${C.g1}`,borderRadius:12,padding:20,marginBottom:16,textAlign:"center"}}>
-              <div style={{fontSize:40,marginBottom:10}}>⏰</div>
+            <div className="ui-card" style={{border:`1px solid ${C.g1}`,padding:24,marginBottom:16,textAlign:"center"}}>
+              <div style={{width:52,height:52,margin:"0 auto 10px",borderRadius:14,display:"flex",alignItems:"center",
+                justifyContent:"center",background:`${C.g1}14`,color:C.g1}}><CalendarClock size={26}/></div>
               <div style={{fontWeight:800,fontSize:16,color:C.g1,marginBottom:6}}>Campaign Scheduled!</div>
               <div style={{fontSize:13,color:C.txs}}>
                 Will automatically send to <strong style={{color:C.tx}}>{csvRows.length} contacts</strong> at<br/>
                 <strong style={{color:C.tx,fontSize:15}}>{schedDate} {schedTime}</strong>
               </div>
               <div style={{fontSize:12,color:C.txd,marginTop:10}}>
-                View progress in <a href="/dashboard/campaigns" style={{color:C.g1}}>Campaigns →</a>
+                View progress in <a href="/dashboard/campaigns" style={{color:C.g1}}>Campaigns <ArrowRight size={12} style={{verticalAlign:"-2px"}}/></a>
               </div>
             </div>
           )}
 
           {campData?.status!=="scheduled"&&(
             <>
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:16}}>
+              <div className="ui-card" style={{padding:20,marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
                   <span style={{fontWeight:700}}>{done} / {total} processed</span>
                   <span style={{fontWeight:800,fontSize:20,color:C.g1}}>{pct}%</span>
@@ -838,14 +834,14 @@ export default function BulkSend() {
                   <div style={{height:"100%",width:`${pct}%`,borderRadius:5,
                     background:`linear-gradient(90deg,${C.g1},${C.teal})`,transition:"width .4s"}}/>
                 </div>
-                <div style={{display:"flex",gap:20,fontSize:13}}>
-                  <span style={{fontWeight:700,color:C.g1}}>✓ {campData?.sent||0} sent</span>
-                  <span style={{fontWeight:700,color:C.red}}>✕ {campData?.failed||0} failed</span>
+                <div style={{display:"flex",gap:20,fontSize:13,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700,color:C.g1,display:"inline-flex",alignItems:"center",gap:5}}><Check size={14} strokeWidth={3}/> {campData?.sent||0} sent</span>
+                  <span style={{fontWeight:700,color:C.red,display:"inline-flex",alignItems:"center",gap:5}}><X size={14} strokeWidth={3}/> {campData?.failed||0} failed</span>
                 </div>
               </div>
 
               {campData?.results&&(
-                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:16}}>
+                <div className="ui-card" style={{overflow:"hidden",marginBottom:16}}>
                   <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,fontWeight:700,fontSize:13,
                     display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span>Results</span>
@@ -854,27 +850,22 @@ export default function BulkSend() {
                         ["phone","name","status","wamid","error"],
                         campData.results.map(r=>({phone:r.phone,name:r.name||"",
                           status:r.status,wamid:r.wamid||"",error:r.error||""})))}
-                        style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,
-                          color:C.txs,fontSize:12,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>
-                        ⬇ Export CSV
+                        className="ui-btn sm">
+                        <Download size={13}/> Export CSV
                       </button>
                     )}
                   </div>
-                  <div style={{maxHeight:300,overflowY:"auto"}}>
-                    {campData.results.filter(r=>r.status!=="pending").map((r,i)=>(
-                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                        padding:"10px 16px",borderBottom:`1px solid ${C.border}50`,
-                        background:r.status==="failed"?"rgba(244,67,54,.04)":"rgba(37,211,102,.02)"}}>
-                        <div>
-                          <div style={{fontWeight:600,fontSize:13}}>{r.name||r.phone}</div>
-                          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:C.txs}}>{r.phone}</div>
-                        </div>
-                        <span style={{fontSize:12,fontWeight:700,color:r.status==="failed"?C.red:C.g1}}>
-                          {r.status==="failed"?"✕ "+r.error:"✓ Sent"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <DataTable dense clientPage={50} maxHeight={360}
+                    rows={campData.results.filter(r=>r.status!=="pending")} rowKey={(r,i)=>i}
+                    footer={`${campData.results.filter(r=>r.status!=="pending").length.toLocaleString("en-IN")} results`}
+                    columns={[
+                      {key:"name",label:"Contact",primary:true,render:r=><span style={{fontWeight:600,display:"block",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||r.phone}</span>},
+                      {key:"phone",label:"Phone",mono:true},
+                      {key:"status",label:"Status",render:r=>(
+                        <span style={{fontSize:12,fontWeight:700,color:r.status==="failed"?C.red:C.g1,display:"inline-flex",alignItems:"center",gap:5,wordBreak:"break-word"}}>
+                          {r.status==="failed"?<><X size={13}/>{r.error}</>:<><Check size={13} strokeWidth={3}/> Sent</>}
+                        </span>)},
+                    ]}/>
                 </div>
               )}
             </>
@@ -882,22 +873,13 @@ export default function BulkSend() {
 
           {!sending&&(
             <button onClick={()=>{setStep(0);setTplId("");setCsvRows([]);setCampData(null);setMediaUrl("");setSchedule(false);setSchedDate("");setSchedTime("");}}
-              style={{width:"100%",padding:10,borderRadius:9,border:`1px solid ${C.border}`,
-                background:"transparent",color:C.txs,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-              ← Start New Campaign
+              className="ui-btn ghost" style={{width:"100%",padding:10}}>
+              <ArrowLeft size={15}/> Start New Campaign
             </button>
           )}
         </div>
       )}
 
-      {toast&&(
-        <div style={{position:"fixed",bottom:20,right:20,zIndex:999,padding:"11px 18px",
-          borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
-          background:toast.t==="success"?`${C.g1}ee`:toast.t==="error"?`${C.red}ee`:`${C.amber}ee`,
-          color:toast.t==="error"?"#fff":"#000"}} onClick={()=>setToast(null)}>
-          {toast.t==="success"?"✓":toast.t==="error"?"✕":"⏰"} {toast.m}
-        </div>
-      )}
     </div>
   );
 }

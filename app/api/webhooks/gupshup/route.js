@@ -10,6 +10,7 @@ import { executeAction }     from "@/lib/ai-actions";
 import { sendGupshupText }   from "@/lib/gupshup";
 import { BUILD_VERSION }     from "@/lib/version";
 import { isAiReplyOn }       from "@/lib/ai-switch";
+import { persistInboundMedia } from "@/lib/inbound-media";
 
 export async function GET() {
   return NextResponse.json({ status:"Gupshup webhook active", queues:queueStats() });
@@ -115,6 +116,17 @@ async function handleInbound(payload) {
       mediaUrl = payload.payload?.url || "";
       bodyText = payload.payload?.caption || "🎥 Video";
       break;
+    case "sticker":
+      mediaUrl = payload.payload?.url || "";
+      bodyText = "🎉 Sticker";
+      mimeType = "image/webp";
+      break;
+    case "reaction": {
+      const p = payload.payload || {};
+      const emoji = p.emoji || p.reaction?.emoji || p.text || "";
+      bodyText = emoji ? `${emoji} Reacted to a message` : "Removed a reaction";
+      break;
+    }
     case "location":
       bodyText = `📍 Location: ${payload.payload?.latitude}, ${payload.payload?.longitude}`;
       break;
@@ -133,6 +145,15 @@ async function handleInbound(payload) {
     { upsert:true }
   );
   dbg.stored = true;
+
+  // The provider's media link expires within ~1-2 days — copy the file to permanent storage
+  // in the background and swap the URL on the message once it's saved.
+  if (mediaUrl) {
+    persistInboundMedia({ url:mediaUrl, mimeType, provider:"gupshup",
+                          filename: msgType==="file"||msgType==="document" ? bodyText : "" })
+      .then(u => u && Message.updateOne({ wamid }, { $set:{ mediaUrl:u } }))
+      .catch(() => {});
+  }
 
   const contact = await Contact.findOneAndUpdate(
     { phone },
@@ -327,11 +348,12 @@ async function applyStatuses(batch) {
   await Campaign.collection.bulkWrite(ops, { ordered:true });
 
   // One-to-one messages (inbox / AI replies)
+  const evTime = new Date(Date.now() - HOLD_MS);   // events are held HOLD_MS before being applied
   const mops = [];
   if (delivered.size) mops.push({ updateMany:{ filter:{ wamid:{ $in:[...delivered] }, status:"sent" },
-                                               update:{ $set:{ status:"delivered" } } } });
+                                               update:{ $set:{ status:"delivered", deliveredAt:evTime } } } });
   if (read.size)      mops.push({ updateMany:{ filter:{ wamid:{ $in:[...read] }, status:{ $in:["sent","delivered"] } },
-                                               update:{ $set:{ status:"read" } } } });
+                                               update:{ $set:{ status:"read", readAt:evTime } } } });
   const fids = [...failed.values()].flatMap(s => [...s]);
   if (fids.length)    mops.push({ updateMany:{ filter:{ wamid:{ $in:fids }, status:{ $in:["sent","delivered"] } },
                                                update:{ $set:{ status:"failed" } } } });

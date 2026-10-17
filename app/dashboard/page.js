@@ -1,9 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Users, Send, Radio, CheckCheck, FileText, Image as ImageIcon, MessageSquare, ArrowRight,
+         Sparkles, Flower2 } from "lucide-react";
+import { PageHeader, StatCard, Card, Badge, EmptyState } from "@/components/ui";
 
-const C={g1:"#25d366",teal:"#00c9d4",blue:"#2979ff",amber:"#ffb300",
-  card:"#111827",surf:"#0d1117",border:"#1c2a3f",tx:"#e8edf5",txs:"#8899b0",txd:"#445566"};
+const STATUS_TONE = { done:"green", running:"amber", queued:"blue", scheduled:"purple", stopped:"red" };
+
+const ACTIONS = [
+  { href:"/dashboard/inbox",     Icon:MessageSquare, label:"Open inbox",   desc:"Reply to devotees",     c:"#25d366" },
+  { href:"/dashboard/bulk",      Icon:Send,          label:"Bulk send",    desc:"Upload a CSV",          c:"#00c9d4" },
+  { href:"/dashboard/contacts",  Icon:Users,         label:"Contacts",     desc:"Manage the list",       c:"#4f8cff" },
+  { href:"/dashboard/templates", Icon:FileText,      label:"Templates",    desc:"Create & review",       c:"#a06bff" },
+  { href:"/dashboard/media",     Icon:ImageIcon,     label:"Media",        desc:"Images & PDFs",         c:"#ffb300" },
+];
 
 export default function Dashboard() {
   const [stats,  setStats]  = useState({contacts:0,messages:0,campaigns:0,delivered:0});
@@ -13,92 +23,77 @@ export default function Dashboard() {
   useEffect(()=>{
     Promise.all([
       fetch("/api/campaigns").then(r=>r.json()).catch(()=>({campaigns:[]})),
-      fetch("/api/contacts").then(r=>r.json()).catch(()=>({contacts:[]})),
+      fetch("/api/contacts?limit=1").then(r=>r.json()).catch(()=>({total:0})),
       fetch("/api/messages/stats").then(r=>r.json()).catch(()=>({total:0,delivered:0})),
     ]).then(([c,co,m])=>{
       setCamps(c.campaigns||[]);
-      setStats({contacts:co.contacts?.length||0,campaigns:c.campaigns?.length||0,
+      setStats({contacts:co.total||0,campaigns:c.campaigns?.length||0,
         messages:m.total||0,delivered:(m.delivered||0)+(m.read||0)});
       setLoading(false);
     });
   },[]);
 
-  const sc=s=>({done:C.g1,running:C.amber,queued:C.blue,stopped:"#f44336"})[s]||C.txs;
+  const n = v => Number(v||0).toLocaleString("en-IN");
 
   return (
-    <div style={{padding:"16px"}}>
-      <h1 style={{fontSize:18,fontWeight:800,marginBottom:2}}>🕉 Hare Krishna!</h1>
-      <p style={{fontSize:12,color:C.txs,marginBottom:16}}>HKM Vizag — WhatsApp CRM</p>
+    <div className="page-wrap">
+      <PageHeader icon={Flower2} title="Hare Krishna" subtitle="Overview of your WhatsApp outreach"
+        actions={<Link href="/dashboard/bulk" className="ui-btn primary"><Send size={15}/>New campaign</Link>}/>
 
-      {/* Stats grid — 2x2 on mobile, 4x1 on desktop */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-        {[{l:"Contacts",v:stats.contacts,c:C.g1,i:"👥"},
-          {l:"Messages",v:stats.messages,c:C.teal,i:"📤"},
-          {l:"Campaigns",v:stats.campaigns,c:C.blue,i:"📡"},
-          {l:"Delivered",v:stats.delivered,c:C.amber,i:"✓✓"}].map(s=>(
-          <div key={s.l} style={{background:C.card,border:`1px solid ${C.border}`,
-            borderRadius:12,padding:"14px 16px",
-            borderTop:`3px solid ${s.c}`}}>
-            <div style={{fontSize:20,marginBottom:6}}>{s.i}</div>
-            <div style={{fontSize:24,fontWeight:800,color:s.c}}>{loading?"…":s.v}</div>
-            <div style={{fontSize:11,color:C.txs,marginTop:2,fontWeight:600}}>{s.l}</div>
-          </div>
-        ))}
+      <div className="stat-grid">
+        <StatCard icon={Users}      label="Contacts"  value={n(stats.contacts)}  color="#25d366" loading={loading}/>
+        <StatCard icon={Send}       label="Messages"  value={n(stats.messages)}  color="#00c9d4" loading={loading}/>
+        <StatCard icon={Radio}      label="Campaigns" value={n(stats.campaigns)} color="#4f8cff" loading={loading}/>
+        <StatCard icon={CheckCheck} label="Delivered" value={n(stats.delivered)} color="#ffb300" loading={loading}/>
       </div>
 
-      {/* Quick actions */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,
-        borderRadius:12,padding:16,marginBottom:16}}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Quick Actions</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[{href:"/dashboard/bulk",     icon:"📤",label:"Bulk Send",   desc:"Upload CSV"},
-            {href:"/dashboard/contacts", icon:"👥",label:"Contacts",    desc:"Manage list"},
-            {href:"/dashboard/templates",icon:"📋",label:"Templates",   desc:"19 templates"},
-            {href:"/dashboard/media",    icon:"🖼", label:"Media",       desc:"Images & PDFs"},
-          ].map(a=>(
-            <Link key={a.href} href={a.href} style={{
-              padding:12,borderRadius:10,border:`1px solid ${C.border}`,
-              textDecoration:"none",display:"block",background:C.surf}}>
-              <div style={{fontSize:20,marginBottom:4}}>{a.icon}</div>
-              <div style={{fontWeight:700,fontSize:13,color:C.tx}}>{a.label}</div>
-              <div style={{fontSize:11,color:C.txs,marginTop:1}}>{a.desc}</div>
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent campaigns */}
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16}}>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:12,
-          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>Recent Campaigns</span>
-          <Link href="/dashboard/campaigns" style={{fontSize:12,color:C.g1,textDecoration:"none"}}>
-            View all →
-          </Link>
-        </div>
-        {loading?<p style={{color:C.txd,fontSize:13}}>Loading…</p>
-        :camps.length===0?(
-          <div style={{textAlign:"center",padding:"16px 0",color:C.txd}}>
-            <p style={{fontSize:13}}>No campaigns yet</p>
-            <Link href="/dashboard/bulk" style={{color:C.g1,fontSize:12}}>Start bulk send →</Link>
+      <div className="dash-two">
+        <Card title="Quick actions" icon={Sparkles}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {ACTIONS.map(({href,Icon,label,desc,c})=>(
+              <Link key={href} href={href} className="card-hover" style={{display:"flex",alignItems:"center",gap:12,padding:"11px 12px",
+                borderRadius:11,border:"1px solid var(--line)",textDecoration:"none",background:"var(--panel)"}}>
+                <div style={{width:34,height:34,borderRadius:9,background:`${c}1f`,color:c,display:"flex",
+                  alignItems:"center",justifyContent:"center"}}><Icon size={17}/></div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13.5,color:"var(--tx)"}}>{label}</div>
+                  <div style={{fontSize:11.5,color:"var(--tx2)"}}>{desc}</div>
+                </div>
+                <ArrowRight size={15} color="var(--tx3)"/>
+              </Link>
+            ))}
           </div>
-        ):camps.slice(0,5).map(c=>(
-          <Link key={c._id} href={`/dashboard/campaigns/${c._id}`} style={{
-            display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"10px 8px",borderRadius:8,textDecoration:"none",
-            marginBottom:4,borderBottom:`1px solid ${C.border}50`}}>
-            <div style={{minWidth:0,flex:1}}>
-              <div style={{fontWeight:600,fontSize:13,color:C.tx,overflow:"hidden",
-                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-              <div style={{fontSize:11,color:C.txs,overflow:"hidden",
-                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.templateName}</div>
+        </Card>
+
+        <Card title="Recent campaigns" icon={Radio}
+          actions={<Link href="/dashboard/campaigns" style={{fontSize:12,color:"var(--brand)",textDecoration:"none",
+            display:"flex",alignItems:"center",gap:4}}>View all<ArrowRight size={13}/></Link>}>
+          {loading ? (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[0,1,2,3].map(i=><div key={i} className="skeleton" style={{height:46}}/>)}
             </div>
-            <div style={{textAlign:"right",flexShrink:0,marginLeft:10}}>
-              <div style={{fontSize:13,fontWeight:800,color:C.g1}}>{c.sent}/{c.totalContacts}</div>
-              <div style={{fontSize:10,fontWeight:800,color:sc(c.status)}}>{c.status?.toUpperCase()}</div>
-            </div>
-          </Link>
-        ))}
+          ) : camps.length===0 ? (
+            <EmptyState icon={Radio} title="No campaigns yet" hint="Send your first bulk message to see it here"
+              action={<Link href="/dashboard/bulk" className="ui-btn primary sm"><Send size={13}/>Start bulk send</Link>}/>
+          ) : camps.slice(0,6).map(c=>{
+            const pct = c.totalContacts ? Math.round((c.sent/c.totalContacts)*100) : 0;
+            return (
+              <Link key={c._id} href={`/dashboard/campaigns/${c._id}`} style={{display:"block",padding:"11px 4px",
+                textDecoration:"none",borderBottom:"1px solid rgba(28,42,63,.6)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13.5,color:"var(--tx)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                    <div style={{fontSize:11.5,color:"var(--tx2)",marginTop:1}}>{c.templateName} · {n(c.sent)}/{n(c.totalContacts)} sent</div>
+                  </div>
+                  <Badge tone={STATUS_TONE[c.status]||""}>{c.status}</Badge>
+                </div>
+                <div style={{height:4,borderRadius:4,background:"var(--card2)",marginTop:9,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,var(--brand),var(--teal))",borderRadius:4}}/>
+                </div>
+              </Link>
+            );
+          })}
+        </Card>
       </div>
     </div>
   );

@@ -1,6 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { FileText, RefreshCw, Plus, Search, Link as LinkIcon, ChevronDown, ChevronUp, X } from "lucide-react";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import { Modal } from "@/components/Feedback";
+import { PageHeader, Card, Btn, Badge, EmptyState } from "@/components/ui";
 
 const C={g1:"#25d366",g2:"#1aad52",teal:"#00c9d4",blue:"#2979ff",
   amber:"#ffb300",red:"#f44336",purple:"#9c27b0",
@@ -27,6 +31,8 @@ export default function Templates() {
   const [catF,      setCatF]      = useState("ALL");
   const [statF,     setStatF]     = useState("ALL");
   const [expanded,  setExpanded]  = useState(null);
+  const [shown,     setShown]     = useState(24);
+  useEffect(()=>{ setShown(24); },[search,catF,statF,provider]);
 
   const fetchTpls = async (showLoad=true) => {
     if(showLoad) setLoading(true);
@@ -48,156 +54,131 @@ export default function Templates() {
   const sc=s=>s==="APPROVED"?C.g1:s==="PENDING"?C.amber:C.red;
 
   return (
-    <div style={{padding:16}}>
-      {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",
-        alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
-        <div>
-          <h1 style={{fontSize:18,fontWeight:800}}>📋 Templates</h1>
-          <p style={{fontSize:12,color:C.txs,marginTop:2}}>
-            {templates.filter(t=>t.status==="APPROVED").length} approved · {templates.length} total
-            {lastSync&&<span style={{marginLeft:6,color:C.txd}}>· {lastSync.toLocaleTimeString()}</span>}
-          </p>
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          {/* Provider toggle */}
-          <div style={{display:"flex",gap:2,background:C.surf,borderRadius:9,padding:2,
+    <div className="page-wrap">
+      <PageHeader icon={FileText} title="Templates"
+        subtitle={<>{templates.filter(t=>t.status==="APPROVED").length} approved · {templates.length} total
+          {lastSync&&<span style={{marginLeft:6,color:C.txd}}>· synced {lastSync.toLocaleTimeString()}</span>}</>}
+        actions={<>
+          <div style={{display:"flex",gap:2,background:C.surf,borderRadius:10,padding:3,
             border:`1px solid ${C.border}`}}>
             {[{v:"flaxxa",l:"Flaxxa"},{v:"gupshup",l:"Gupshup"}].map(p=>(
               <button key={p.v} onClick={()=>setProvider(p.v)} style={{
-                padding:"6px 12px",borderRadius:7,border:"none",
-                background:provider===p.v?C.g1:"transparent",
-                color:provider===p.v?"#000":C.txs,
+                padding:"6px 14px",borderRadius:8,border:"none",
+                background:provider===p.v?`linear-gradient(135deg,${C.g1},${C.g2})`:"transparent",
+                color:provider===p.v?"#04130a":C.txs,
                 fontSize:12,fontWeight:700,cursor:"pointer"}}>
                 {p.l}
               </button>
             ))}
           </div>
-          <button onClick={()=>fetchTpls(true)} disabled={loading}
-            style={{padding:"8px 12px",borderRadius:9,border:`1px solid ${C.border}`,
-              background:loading?C.surf:`linear-gradient(135deg,${C.teal},#0097a7)`,
-              color:loading?C.txs:"#000",fontWeight:700,fontSize:12,cursor:"pointer",
-              display:"inline-flex",alignItems:"center",gap:5}}>
-            {loading?(
-              <><div style={{width:11,height:11,border:`2px solid ${C.border}`,
-                borderTopColor:C.teal,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>
-              Syncing</>
-            ):"↻ Sync"}
-          </button>
-          <Link href="/dashboard/templates/create" style={{
-            padding:"8px 12px",borderRadius:9,textDecoration:"none",fontWeight:700,fontSize:12,
-            background:`linear-gradient(135deg,${C.g1},${C.g2})`,color:"#000"}}>
-            + Create
+          <Btn icon={RefreshCw} loading={loading} onClick={()=>fetchTpls(true)}>{loading?"Syncing":"Sync"}</Btn>
+          <Link href="/dashboard/templates/create" className="ui-btn primary" style={{textDecoration:"none"}}>
+            <Plus size={15}/> Create
           </Link>
+        </>}/>
+
+      <div className="dt-toolbar ui-card" style={{marginBottom:14,borderRadius:14}}>
+        <div className="dt-search">
+          <Search size={15}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} type="search" name="tpl-search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} placeholder="Search templates"/>
+          {search&&<button onClick={()=>setSearch("")} aria-label="Clear"><X size={14}/></button>}
         </div>
-      </div>
-
-      {/* Search */}
-      <input style={{width:"100%",background:C.surf,border:`1px solid ${C.border}`,
-        borderRadius:10,padding:"9px 13px",color:C.tx,fontSize:13,outline:"none",
-        boxSizing:"border-box",marginBottom:10}}
-        placeholder="🔍 Search templates…"
-        value={search} onChange={e=>setSearch(e.target.value)}/>
-
-      {/* Filters - horizontal scroll */}
-      <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4,marginBottom:14}}>
-        {cats.map(c=>(
-          <button key={c} onClick={()=>setCatF(c)} style={{
-            padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,
-            background:catF===c?C.g1:C.border,
-            color:catF===c?"#000":C.txs,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-            {c}
-          </button>
-        ))}
-        {["ALL","APPROVED","PENDING"].map(s=>(
-          <button key={s} onClick={()=>setStatF(s)} style={{
-            padding:"5px 12px",borderRadius:20,border:"none",flexShrink:0,cursor:"pointer",
-            background:statF===s?(s==="APPROVED"?`${C.g1}25`:s==="PENDING"?`${C.amber}25`:C.border):"transparent",
-            color:s==="APPROVED"?C.g1:s==="PENDING"?C.amber:C.txs,
-            fontSize:11,fontWeight:700}}>
-            {s==="ALL"?"All Status":s}
-          </button>
-        ))}
+        <div className="chips" style={{maxWidth:"100%"}}>
+          {cats.map(c=>(
+            <button key={c} className={`chip ${catF===c?"on":""}`} onClick={()=>setCatF(c)}>
+              {c==="ALL"?"All":c}<small>{c==="ALL"?templates.length:templates.filter(t=>t.category===c).length}</small></button>))}
+        </div>
+        <div className="chips" style={{maxWidth:"100%"}}>
+          {["ALL","APPROVED","PENDING"].map(s=>(
+            <button key={s} className={`chip ${statF===s?"on":""}`} onClick={()=>setStatF(s)}>
+              {s==="ALL"?"All status":s[0]+s.slice(1).toLowerCase()}</button>))}
+        </div>
       </div>
 
       {/* Template list */}
       {loading&&!templates.length?(
-        <p style={{color:C.txd,textAlign:"center",padding:40}}>Loading from Flaxxa…</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+          {[0,1,2,3,4,5].map(i=><div key={i} className="skeleton" style={{height:170,borderRadius:14}}/>)}
+        </div>
       ):(
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {list.map(t=>(
-            <div key={t.id} style={{background:C.card,border:`1px solid ${C.border}`,
-              borderRadius:12,padding:14,
-              borderLeft:`4px solid ${t.category==="MARKETING"?C.amber:C.teal}`}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,340px),1fr))",gap:14,alignItems:"stretch",gridAutoRows:"1fr"}}>
+          {list.slice(0,shown).map(t=>(
+            <div key={t.id} className="ui-card card-hover" style={{padding:14,display:"flex",flexDirection:"column",minWidth:0,
+              borderLeft:`3px solid ${t.category==="MARKETING"?C.amber:C.teal}`}}>
               <div style={{display:"flex",justifyContent:"space-between",
-                alignItems:"flex-start",marginBottom:8}}>
+                alignItems:"flex-start",marginBottom:10}}>
                 <div style={{flex:1,paddingRight:8,minWidth:0}}>
                   <div style={{fontWeight:800,fontSize:12,
                     fontFamily:"'JetBrains Mono',monospace",
-                    wordBreak:"break-all",marginBottom:4}}>{t.name}</div>
+                    wordBreak:"break-all",marginBottom:6,color:"var(--tx)"}}>{t.name}</div>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                    <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20,
-                      background:`${t.category==="MARKETING"?C.amber:C.teal}18`,
-                      color:t.category==="MARKETING"?C.amber:C.teal}}>{t.category}</span>
-                    <span style={{fontSize:9,color:C.txd}}>{t.language}</span>
-                    {t.header&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",
-                      borderRadius:20,background:`${C.blue}18`,color:C.blue}}>
-                      {String(t.header).replace(/:.+/,"")}
-                    </span>}
+                    <Badge tone={t.category==="MARKETING"?"amber":"teal"}>{t.category}</Badge>
+                    <span style={{fontSize:10,color:C.txd}}>{t.language}</span>
+                    {t.header&&<Badge tone="blue">{String(t.header).replace(/:.+/,"")}</Badge>}
                   </div>
                 </div>
-                <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",
-                  borderRadius:20,flexShrink:0,
-                  background:`${sc(t.status)}18`,color:sc(t.status)}}>
-                  {t.status}
-                </span>
+                <Badge tone={t.status==="APPROVED"?"green":t.status==="PENDING"?"amber":"red"}>{t.status}</Badge>
               </div>
-              <div style={{background:C.surf,borderRadius:8,padding:10,marginBottom:8,
-                border:`1px solid ${C.border}`,
-                maxHeight:expanded===t.id?"none":"68px",overflow:"hidden"}}>
+              <div style={{background:C.surf,borderRadius:10,padding:"10px 12px",marginBottom:10,
+                border:`1px solid ${C.border}`,minHeight:96,flex:"1 1 auto"}}>
                 <p style={{fontSize:12,color:C.txs,lineHeight:1.6,
-                  whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0}}>
+                  whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0,
+                  display:"-webkit-box",WebkitLineClamp:4,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
                   {t.body||<span style={{fontStyle:"italic"}}>No body text</span>}
                 </p>
               </div>
+              <div style={{marginTop:"auto"}}>
               {t.params?.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
                   {t.params.map((p,i)=>(
-                    <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:20,
-                      fontWeight:700,background:`${C.blue}14`,color:C.blue}}>
-                      {`{{${i+1}}}`} {p}
-                    </span>
+                    <Badge key={i} tone="blue">{`{{${i+1}}}`} {p}</Badge>
                   ))}
                 </div>
               )}
               {t.buttons?.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
                   {t.buttons.map((b,i)=>(
-                    <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:20,
-                      fontWeight:700,background:`${C.purple}14`,color:C.purple}}>
-                      🔗 {b}
-                    </span>
+                    <Badge key={i} tone="purple" icon={LinkIcon}>{b}</Badge>
                   ))}
                 </div>
               )}
               {t.body?.length>120&&(
-                <button onClick={()=>setExpanded(expanded===t.id?null:t.id)}
-                  style={{fontSize:11,color:C.txd,background:"none",
-                    border:"none",cursor:"pointer",padding:0}}>
-                  {expanded===t.id?"↑ Less":"↓ Full body"}
+                <button onClick={()=>setExpanded(t)}
+                  style={{fontSize:11,color:C.txs,background:"none",fontWeight:600,
+                    border:"none",cursor:"pointer",padding:0,display:"inline-flex",alignItems:"center",gap:4}}>
+                  <><ChevronDown size={13}/> Full body</>
                 </button>
               )}
+              </div>
             </div>
           ))}
+          {list.length>shown&&<div style={{gridColumn:"1/-1"}}><InfiniteSentinel onVisible={()=>setShown(n=>n+24)} hasMore/></div>}
           {list.length===0&&(
-            <div style={{textAlign:"center",padding:40,color:C.txd}}>
-              <div style={{fontSize:32,marginBottom:8}}>📋</div>
-              <p style={{color:C.txs}}>No templates match</p>
+            <div style={{gridColumn:"1/-1"}}>
+              <EmptyState icon={FileText} title="No templates match" hint="Try a different search or filter"/>
             </div>
           )}
         </div>
       )}
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <Modal open={!!expanded} onClose={()=>setExpanded(null)} icon={FileText} title={expanded?.name||""} width={560}>
+        {expanded&&(
+          <div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+              <Badge tone={expanded.category==="MARKETING"?"amber":"teal"}>{expanded.category}</Badge>
+              <Badge tone={expanded.status==="APPROVED"?"green":expanded.status==="PENDING"?"amber":"red"}>{expanded.status}</Badge>
+              {expanded.language&&<Badge>{expanded.language}</Badge>}
+              {expanded.header&&<Badge tone="blue">{String(expanded.header).replace(/:.+/,"")}</Badge>}
+            </div>
+            <div style={{background:C.surf,border:`1px solid ${C.border}`,borderRadius:12,padding:14}}>
+              <p style={{fontSize:14,lineHeight:1.65,color:"var(--tx)",whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0}}>{expanded.body}</p>
+            </div>
+            {expanded.params?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:12}}>
+              {expanded.params.map((p,i)=><Badge key={i} tone="blue">{`{{${i+1}}}`} {p}</Badge>)}</div>}
+            {expanded.buttons?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+              {expanded.buttons.map((b,i)=><Badge key={i} tone="purple" icon={LinkIcon}>{b}</Badge>)}</div>}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

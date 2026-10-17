@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { persistInboundMedia } from "@/lib/inbound-media";
 import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Message          from "@/models/Message";
@@ -106,6 +107,11 @@ export async function POST(req) {
             case "contacts":
               bodyText = `👤 Contact: ${msg.contacts?.[0]?.name?.formatted_name || "Contact shared"}`;
               break;
+            case "reaction": {
+              const emoji = msg.reaction?.emoji || "";
+              bodyText = emoji ? `${emoji} Reacted to a message` : "Removed a reaction";
+              break;
+            }
             case "button":
               bodyText = msg.button?.text || "[Button Reply]";
               break;
@@ -136,6 +142,14 @@ export async function POST(req) {
             }},
             { upsert:true }
           );
+
+          // Meta media links need auth and expire in minutes — copy to permanent storage now
+          if (mediaUrl) {
+            persistInboundMedia({ url:mediaUrl, mimeType, provider:"flaxxa",
+                                  filename: type==="document" ? bodyText : "" })
+              .then(u => u && Message.updateOne({ wamid }, { $set:{ mediaUrl:u } }))
+              .catch(() => {});
+          }
 
           const contact = await Contact.findOneAndUpdate(
             { phone },
