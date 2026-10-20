@@ -8,7 +8,12 @@ export async function POST(req) {
   await connectDB();
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error:"id required" }, { status:400 });
-  await Campaign.findByIdAndUpdate(id, { status:"stopped" });
+  // Only campaigns that are still active can be stopped (never overwrite done/stopped)
+  const r = await Campaign.updateOne(
+    { _id:id, status:{ $in:["queued","scheduled","running"] } },
+    { $set:{ status:"stopped" } }
+  );
+  if (!r.matchedCount) return NextResponse.json({ error:"Campaign is not running" }, { status:409 });
   return NextResponse.json({ ok:true });
 }
 

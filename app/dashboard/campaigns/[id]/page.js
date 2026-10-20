@@ -3,8 +3,9 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams }           from "next/navigation";
 import { relTime, downloadCSV, SCOLOR } from "@/lib/utils";
 import Link from "next/link";
-import { Megaphone, ArrowLeft, Download, Send, CheckCheck, Eye, XCircle, Users, CheckCircle2, Clock } from "lucide-react";
+import { Megaphone, ArrowLeft, Download, OctagonX, Send, CheckCheck, Eye, XCircle, Users, CheckCircle2, Clock } from "lucide-react";
 import DataTable from "@/components/DataTable";
+import { useConfirm, useToast } from "@/components/Feedback";
 import { PageHeader, Card, StatCard, Btn, Badge, EmptyState } from "@/components/ui";
 
 const C={g1:"#25d366",teal:"#00c9d4",blue:"#2979ff",red:"#f44336",amber:"#ffb300",
@@ -17,6 +18,8 @@ export default function CampaignDetail() {
   const [loading,setLoading]=useState(true);
   const [rf,setRf]=useState("all");
   const [q,setQ]=useState("");
+  const askConfirm=useConfirm(), toast=useToast();
+  const [stopping,setStopping]=useState(false);
 
   useEffect(()=>{
     if(!id)return;
@@ -26,6 +29,22 @@ export default function CampaignDetail() {
     });
     load();
   },[id]);
+
+  const reload=()=>fetch(`/api/campaigns/${id}`).then(r=>r.json()).then(d=>setCamp(d.campaign));
+  const stopCampaign=async()=>{
+    const ok=await askConfirm({title:"Stop this campaign?",
+      message:"No more messages will be sent. Messages already sent stay as they are. It can take a few seconds to stop.",
+      confirmLabel:"Stop campaign",danger:true});
+    if(!ok)return;
+    setStopping(true);
+    try{
+      const r=await fetch("/api/campaigns/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(d.error||"Could not stop");
+      toast("Campaign stopped");await reload();
+    }catch(e){toast(e.message||"Could not stop the campaign","error");}
+    setStopping(false);
+  };
 
   const results=camp?.results||[];
   const rcounts=useMemo(()=>{const m={all:results.length};results.forEach(r=>{m[r.status]=(m[r.status]||0)+1;});return m;},[results]);
@@ -55,6 +74,8 @@ export default function CampaignDetail() {
         actions={<>
           <Badge tone={({done:"green",running:"amber",queued:"blue",stopped:"red",scheduled:"purple"})[camp.status]||""}>
             {camp.status?.toUpperCase()}</Badge>
+          {["queued","scheduled","running"].includes(camp.status)&&(
+            <Btn variant="danger" icon={OctagonX} loading={stopping} onClick={stopCampaign}>Stop campaign</Btn>)}
           <Btn icon={Download} onClick={()=>downloadCSV(`${camp.name}_results.csv`,
             ["phone","name","status","wamid","error"],
             (camp.results||[]).map(r=>({phone:r.phone,name:r.name||"",
