@@ -7,7 +7,7 @@ WhatsApp message management system for **Hare Krishna Movement Visakhapatnam** b
 - **MongoDB Atlas** — Database (via Railway)
 - **Mongoose** — ODM
 - **Bull + Redis** — Bulk send queue (via Railway)
-- **Cloudinary** — Media storage (images, PDFs)
+- **Cloudflare R2** — Media storage (images, PDFs)
 - **Flaxxa WAPI** — WhatsApp Cloud API
 - **NextAuth.js** — Authentication
 - **Tailwind CSS** — Styling
@@ -19,7 +19,7 @@ WhatsApp message management system for **Hare Krishna Movement Visakhapatnam** b
 - ✅ Background queue with Bull (non-blocking sends)
 - ✅ Campaign history + results tracking
 - ✅ Contact management + CSV import
-- ✅ Media library with Cloudinary
+- ✅ Media library with Cloudflare R2
 - ✅ Delivery status webhook
 - ✅ Auth with NextAuth
 

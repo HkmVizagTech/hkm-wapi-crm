@@ -2,16 +2,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { connectDB }    from "@/lib/mongodb";
 import Media            from "@/models/Media";
-import { createHash }   from "crypto";
+import { r2Put, r2Configured } from "@/lib/r2";
 
 export async function POST(req) {
   try {
-    const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
-    const API_KEY    = process.env.CLOUDINARY_API_KEY;
-    const API_SECRET = process.env.CLOUDINARY_API_SECRET;
-
-    if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
-      return NextResponse.json({ error:"Cloudinary credentials not configured in Railway variables" }, { status:400 });
+    if (!r2Configured()) {
+      return NextResponse.json({ error:"Cloudflare R2 credentials not configured in Railway variables (CLOUDFLARE_*)" }, { status:400 });
     }
 
     const fd   = await req.formData();
@@ -20,42 +16,28 @@ export async function POST(req) {
 
     if (!file) return NextResponse.json({ error:"No file provided" }, { status:400 });
 
-    const type      = file.type.startsWith("image/") ? "image" : "document";
-    const buf       = Buffer.from(await file.arrayBuffer());
-    const b64       = buf.toString("base64");
-    const dataUri   = `data:${file.type};base64,${b64}`;
-    const timestamp = Math.floor(Date.now() / 1000);
-    const folder    = "hkm-wapi";
+    const type = file.type.startsWith("image/") ? "image" : "document";
+    const buf  = Buffer.from(await file.arrayBuffer());
+    const ext  = (String(file.name || name).match(/\.([A-Za-z0-9]{1,5})$/)?.[1] || "").toLowerCase();
+    const safe = String(file.name || name).replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "file";
+    const key  = `hkm-wapi/${Date.now()}-${safe}${ext ? "." + ext : ""}`;
 
-    // Correct Cloudinary signature:
-    // SHA1 of "folder=hkm-wapi&timestamp=<ts><api_secret>"
-    const sigStr    = `folder=${folder}&timestamp=${timestamp}${API_SECRET}`;
-    const signature = createHash("sha1").update(sigStr).digest("hex");
-
-    const uploadForm = new FormData();
-    uploadForm.append("file",      dataUri);
-    uploadForm.append("folder",    folder);
-    uploadForm.append("api_key",   API_KEY);
-    uploadForm.append("timestamp", String(timestamp));
-    uploadForm.append("signature", signature);
-
-    const r = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`,
-      { method:"POST", body:uploadForm }
-    );
-
-    const d = await r.json();
-    if (!r.ok || d.error) {
-      return NextResponse.json({ error:d.error?.message || "Cloudinary upload failed" }, { status:500 });
+    let up;
+    try {
+      up = await r2Put(key, buf, file.type || "application/octet-stream");
+    } catch (e) {
+      return NextResponse.json({ error:e.message }, { status:500 });
     }
 
     await connectDB();
+    // Field names keep their legacy "cloudinary*" spelling so existing Media records and the library UI keep working;
+    // they now hold the Cloudflare R2 public URL and object key.
     const media = await Media.create({
       name, type,
-      cloudinaryUrl:      d.secure_url,
-      cloudinaryPublicId: d.public_id,
-      format:             d.format,
-      size:               d.bytes,
+      cloudinaryUrl:      up.url,
+      cloudinaryPublicId: up.key,
+      format:             ext,
+      size:               buf.length,
     });
 
     return NextResponse.json({ media }, { status:201 });

@@ -31,5 +31,7 @@ const S = new mongoose.Schema({
 // status event scans every campaign's results array (tens of thousands per bulk send).
 S.index({ "results.wamid":1 });
 S.index({ status:1, scheduledAt:1 });
+S.index({ createdAt:-1 });   // campaign list sorts by createdAt; without this it sorts in memory and hits the 32MB limit
+S.index({ status:1, createdAt:-1 });
 
 export default mongoose.models.Campaign || mongoose.model("Campaign", S);

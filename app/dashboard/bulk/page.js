@@ -513,7 +513,7 @@ export default function BulkSend() {
                 </label>
                 <input style={IS} value={mediaUrl} onChange={e=>setMediaUrl(e.target.value)}
                   placeholder={
-                    headerFmt==="IMAGE"    ? "https://res.cloudinary.com/your-cloud/image/upload/..." :
+                    headerFmt==="IMAGE"    ? "https://pub-xxxx.r2.dev/your-image.jpg" :
                     headerFmt==="DOCUMENT" ? "https://example.com/receipt.pdf" :
                     "https://example.com/video.mp4"
                   }/>
@@ -521,8 +521,8 @@ export default function BulkSend() {
                 <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,
                   background:"rgba(244,67,54,.1)",border:"1px solid rgba(244,67,54,.3)",
                   color:"#f44336",fontSize:12,fontWeight:600}}>
-                  <X size={13} style={{verticalAlign:"-2px",marginRight:4}}/>WhatsApp doesn't accept WebP images. Use a JPG or PNG link — on Cloudinary just change
-                  {" "}<code>.webp</code> to <code>.jpg</code> at the end of the URL.
+                  <X size={13} style={{verticalAlign:"-2px",marginRight:4}}/>WhatsApp doesn't accept WebP images. Use a JPG or PNG link — re-export the image as
+                  {" "}<code>.jpg</code> or <code>.png</code> and upload it again.
                 </div>
               )}
               {mediaUrl && mediaUrl.startsWith("data:") && (
@@ -533,7 +533,7 @@ export default function BulkSend() {
                   <a href="/dashboard/media" target="_blank" style={{color:"#f44336"}}>
                     Media Library
                   </a>{" "}
-                  first to get a Cloudinary URL.
+                  first to get a public URL.
                 </div>
               )}
               </div>
@@ -546,7 +546,7 @@ export default function BulkSend() {
                 </div>
               )}
               <p style={{fontSize:11,color:C.txd,marginTop:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                <Lightbulb size={13}/> Upload images to Media Library first to get a Cloudinary URL{" "}
+                <Lightbulb size={13}/> Upload images to Media Library first to get a public URL{" "}
                 <a href="/dashboard/media" target="_blank" style={{color:C.teal}}>Media Library</a>
               </p>
             </div>

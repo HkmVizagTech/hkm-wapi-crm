@@ -18,7 +18,7 @@ export async function GET(req) {
       app:         !!process.env.GUPSHUP_APPNAME,
     },
     flaxxa:        !!process.env.FLAXXA_TOKEN,
-    cloudinary:    !!process.env.CLOUDINARY_CLOUD_NAME,
+    r2:            !!(process.env.CLOUDFLARE_R2_BUCKET && process.env.CLOUDFLARE_R2_PUBLIC_URL),
     campaigner:    !!process.env.CAMPAIGNER_API_URL,
     webhooks: {
       gupshup: `${base}/api/webhooks/gupshup`,

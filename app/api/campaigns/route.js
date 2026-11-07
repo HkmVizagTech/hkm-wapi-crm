@@ -14,6 +14,7 @@ export async function GET(req) {
     .select("-results -defaultParams")
     .sort({ createdAt:-1 })
     .limit(200)
+    .allowDiskUse(true)   // safety net if the sort ever exceeds Mongo's 32MB in-memory limit
     .lean();
 
   const enriched = campaigns.map(c => {
