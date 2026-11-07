@@ -38,6 +38,21 @@ async function forwardWebhook(payload, eventType) {
   } catch {}
 }
 
+// Pass every event on to DRM, so callers and admins can chat with donors there. Off unless
+// DRM_CHAT_WEBHOOK_URL is set; never slows or breaks this webhook (a failure is only logged).
+// DRM_CHAT_WEBHOOK_SECRET must equal WA_CHAT_WEBHOOK_SECRET on the DRM server.
+function forwardToDrm(body) {
+  const url = process.env.DRM_CHAT_WEBHOOK_URL;
+  if (!url) return;
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type":"application/json", "X-Webhook-Secret": process.env.DRM_CHAT_WEBHOOK_SECRET || "" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  }).then(r => { if (!r.ok) console.warn("DRM chat forward answered", r.status); })
+    .catch(e => console.warn("DRM chat forward failed:", e.message));
+}
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const mode      = searchParams.get("hub.mode");
@@ -54,6 +69,7 @@ export async function POST(req) {
   try {
     await connectDB();
     const body = await req.json();
+    forwardToDrm(body);
 
     for (const entry of (body?.entry||[])) {
       for (const change of (entry?.changes||[])) {
